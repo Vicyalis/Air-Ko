@@ -1,7 +1,3 @@
-<div align="center">
-  <img src="docs/icon.png" alt="App Icon" width="100" />
-  <h1>Air-Ko</h1>
-
 Android 端 LLM 聊天客户端，基于 <a href="https://github.com/rikkahub/rikkahub">RikkaHub</a>（AGPL-3.0）的衍生分支。
 </div>
 
