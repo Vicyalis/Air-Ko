@@ -1,0 +1,534 @@
+package me.rerere.rikkahub.data.recommend
+
+import java.io.ByteArrayInputStream
+import java.security.MessageDigest
+import java.util.zip.ZipInputStream
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.decodeFromJsonElement
+import me.rerere.rikkahub.data.skills.SkillFrontmatterParser
+
+/**
+ * 推荐商店的 Index 协议（照上游 `RecommendedProviders.kt` 的风格扩展而来）。
+ *
+ * 一个 index 就是一份 JSON：既可以是裸数组 `[{...}]`，也可以是
+ * `{"items": [...]}` / `{"entries": [...]}` 这类包了一层的对象。字段定义见 [RecommendEntryDto]。
+ *
+ * 解析刻意做成「宽进严出」：
+ * - 未知字段忽略、缺省字段取默认值、`tags`/`deps` 写成逗号分隔的字符串也认；
+ * - 但必填字段（id / type）缺失、或者 sha256 格式非法、非 inline 条目没有合法的 http(s) 地址时，
+ *   这条会被**跳过并记录原因**，而不是带着可疑数据进入安装流程 —— 装进来的是能改 AI 行为的内容，
+ *   宁可不显示也不能显示错的。
+ */
+
+/** 推荐条目的类目，对应 index 的 `type` 字段。 */
+enum class RecommendType(val wire: String) {
+    SKILL("skill"),
+    PROMPT("prompt"),
+    QUICK_MESSAGE("quick_message"),
+    MCP("mcp");
+
+    companion object {
+        fun fromWire(value: String?): RecommendType? {
+            val normalized = value?.trim()?.lowercase() ?: return null
+            return entries.firstOrNull { it.wire == normalized }
+        }
+    }
+}
+
+/** 条目的安装方式，对应 index 的 `install_kind` 字段。 */
+enum class InstallKind(val wire: String) {
+    /** Node 生态，用 npx 拉起（一般用于本地 stdio MCP server） */
+    NPX("npx"),
+
+    /** Python 生态，用 uvx/uv 拉起 */
+    UVX("uvx"),
+
+    /** 容器镜像 */
+    DOCKER("docker"),
+
+    /** 远程服务，直接填地址即可用 */
+    REMOTE("remote"),
+
+    /** 内容直接内嵌在 index 里，不需要下载 */
+    INLINE("inline");
+
+    /** 这个安装方式是否需要在设备上跑命令（决定「部署讲解」要不要出现终端入口） */
+    val needsRuntime: Boolean
+        get() = this == NPX || this == UVX || this == DOCKER
+
+    companion object {
+        fun fromWire(value: String?): InstallKind? {
+            val normalized = value?.trim()?.lowercase() ?: return null
+            return entries.firstOrNull { it.wire == normalized }
+        }
+    }
+}
+
+/** 列表排序方式，作为用户偏好持久化。 */
+enum class RecommendSort(val wire: String) {
+    /** index 自带的 sort 升序，再按名称 */
+    DEFAULT("default"),
+    NAME_ASC("name_asc"),
+    NAME_DESC("name_desc"),
+    AUTHOR("author"),
+
+    /** 按安装方式分组（inline/remote 在前，需要跑命令的在后） */
+    RUNTIME("runtime");
+
+    companion object {
+        fun fromWire(value: String?): RecommendSort? {
+            val normalized = value?.trim()?.lowercase() ?: return null
+            return entries.firstOrNull { it.wire == normalized }
+        }
+    }
+}
+
+/**
+ * 校验通过的推荐条目。
+ *
+ * [originId] / [originName] 记录它来自哪个源，UI 要能让用户一眼看出内容是从哪来的（安全要求）。
+ */
+data class RecommendEntry(
+    val id: String,
+    val type: RecommendType,
+    val name: String,
+    val version: String,
+    val author: String,
+    val description: String,
+    val tags: List<String>,
+    val sourceUrl: String,
+    val sha256: String,
+    val installKind: InstallKind,
+    val deps: List<String>,
+    val deployDoc: String,
+    val sort: Int,
+    val content: String,
+    val remoteUrl: String,
+    val runCommand: String,
+    val originId: String,
+    val originName: String,
+) {
+    /** 跨源唯一的条目标识，用于「已确认/已安装」记录与导航参数 */
+    val identity: String get() = "${type.wire}:$id"
+
+    /** 下载/安装前要展示的来源地址；remote 类条目的 source_url 就是服务地址 */
+    val displaySourceUrl: String get() = sourceUrl.ifBlank { remoteUrl }
+
+    /** 是否带了 sha256。没带时 UI 必须明确提示「无法校验完整性」 */
+    val hasChecksum: Boolean get() = sha256.isNotBlank()
+
+    /** MCP 条目真正能写进设置里的地址（仅 remote 类有） */
+    val resolvedRemoteUrl: String
+        get() = when {
+            remoteUrl.isNotBlank() -> remoteUrl
+            installKind == InstallKind.REMOTE -> sourceUrl
+            else -> ""
+        }
+}
+
+/** 被跳过的条目，[reason] 会在 UI 上以「N 条被跳过」的形式展示。 */
+data class SkippedRecommendEntry(
+    val id: String,
+    val name: String,
+    val reason: String,
+)
+
+sealed interface RecommendIndexParseResult {
+    data class Success(
+        val entries: List<RecommendEntry>,
+        val skipped: List<SkippedRecommendEntry>,
+    ) : RecommendIndexParseResult
+
+    data class Invalid(val message: String) : RecommendIndexParseResult
+}
+
+/** 协议原始字段；解析失败的单条会被跳过，所以这里所有字段都得有默认值。 */
+@Serializable
+internal data class RecommendEntryDto(
+    val id: String = "",
+    val type: String = "",
+    val name: String = "",
+    val version: String = "",
+    val author: String = "",
+    val description: String = "",
+    val tags: List<String> = emptyList(),
+    @SerialName("source_url") val sourceUrl: String = "",
+    val sha256: String = "",
+    @SerialName("install_kind") val installKind: String = "",
+    val deps: List<String> = emptyList(),
+    @SerialName("deploy_doc") val deployDoc: String = "",
+    val sort: Int = 0,
+    // 以下三个是协议的可选扩展字段，内嵌内容与自定义启动命令都靠它们表达
+    val content: String = "",
+    @SerialName("remote_url") val remoteUrl: String = "",
+    @SerialName("run_command") val runCommand: String = "",
+)
+
+/**
+ * 解析用的宽松 Json：
+ * - `ignoreUnknownKeys`：新版本 index 多加字段时老客户端不会整份解析失败
+ * - `isLenient` / `coerceInputValues`：字符串里带换行、字段显式给 null 时按默认值处理
+ */
+internal val RecommendIndexJson = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
+    coerceInputValues = true
+    encodeDefaults = true
+}
+
+private val ARRAY_KEYS = listOf("items", "entries", "packages", "data")
+
+/**
+ * 把一份 index 文本解析成条目列表。
+ *
+ * 整份文本不是 JSON、或者没有数组字段 → [RecommendIndexParseResult.Invalid]；
+ * 单条有问题 → 记进 [RecommendIndexParseResult.Success.skipped]，不影响其它条目。
+ */
+fun parseRecommendIndex(
+    text: String,
+    originId: String,
+    originName: String,
+): RecommendIndexParseResult {
+    val root = runCatching { RecommendIndexJson.parseToJsonElement(text) }.getOrNull()
+        ?: return RecommendIndexParseResult.Invalid("index 不是合法的 JSON")
+
+    val array = extractEntryArray(root)
+        ?: return RecommendIndexParseResult.Invalid("index 里没有条目数组（items/entries）")
+
+    val entries = mutableListOf<RecommendEntry>()
+    val skipped = mutableListOf<SkippedRecommendEntry>()
+
+    array.forEach { element ->
+        val raw = runCatching {
+            normalizeEntryElement(element)
+        }.getOrElse { element }
+
+        val dto = runCatching {
+            RecommendIndexJson.decodeFromJsonElement(RecommendEntryDto.serializer(), raw)
+        }.getOrNull()
+
+        if (dto == null) {
+            val fallback = (raw as? JsonObject)?.get("id")?.let { it as? JsonPrimitive }?.content
+            skipped += SkippedRecommendEntry(
+                id = fallback.orEmpty(),
+                name = "",
+                reason = "字段类型不符合协议",
+            )
+            return@forEach
+        }
+
+        when (val result = validateEntryDto(dto)) {
+            is EntryValidation.Valid -> entries += result.entry.copy(
+                originId = originId,
+                originName = originName,
+            )
+
+            is EntryValidation.Invalid -> skipped += SkippedRecommendEntry(
+                id = dto.id.trim(),
+                name = dto.name.trim(),
+                reason = result.reason,
+            )
+        }
+    }
+
+    return RecommendIndexParseResult.Success(entries, skipped)
+}
+
+private fun extractEntryArray(root: JsonElement): JsonArray? = when (root) {
+    is JsonArray -> root
+    is JsonObject -> ARRAY_KEYS.firstNotNullOfOrNull { key ->
+        (root[key] as? JsonArray)?.takeIf { it.isNotEmpty() }
+    } ?: ARRAY_KEYS.firstNotNullOfOrNull { key -> root[key] as? JsonArray }
+
+    else -> null
+}
+
+/**
+ * 把字段类型写歪的条目尽量掰正：
+ * - `tags` / `deps` 写成 `"a, b"` 字符串时拆成数组；
+ * - `sort` 写成 `"3"` 时转成数字。
+ *
+ * 掰不动的原样返回，交给反序列化去报错（该条会被跳过并记录）。
+ */
+internal fun normalizeEntryElement(element: JsonElement): JsonElement {
+    val obj = element as? JsonObject ?: return element
+    return JsonObject(
+        obj.mapValues { (key, value) ->
+            when (key) {
+                "tags", "deps" -> when {
+                    value is JsonNull -> value
+                    value is JsonPrimitive && value.isString ->
+                        JsonArray(
+                            value.content.split(',')
+                                .map { it.trim() }
+                                .filter { it.isNotEmpty() }
+                                .map { JsonPrimitive(it) }
+                        )
+
+                    else -> value
+                }
+
+                "sort" -> when {
+                    value is JsonPrimitive && !value.isString -> {
+                        val parsed = value.content.toIntOrNull()
+                        if (parsed != null) JsonPrimitive(parsed) else value
+                    }
+
+                    else -> value
+                }
+
+                else -> value
+            }
+        }
+    )
+}
+
+private sealed interface EntryValidation {
+    data class Valid(val entry: RecommendEntry) : EntryValidation
+    data class Invalid(val reason: String) : EntryValidation
+}
+
+private fun validateEntryDto(dto: RecommendEntryDto): EntryValidation {
+    val id = dto.id.trim()
+    if (id.isEmpty()) return EntryValidation.Invalid("缺少 id")
+
+    val type = RecommendType.fromWire(dto.type)
+        ?: return EntryValidation.Invalid("type 缺失或未知：${dto.type.ifBlank { "(空)" }}")
+
+    val installKind = if (dto.installKind.isBlank()) {
+        InstallKind.INLINE
+    } else {
+        InstallKind.fromWire(dto.installKind)
+            ?: return EntryValidation.Invalid("install_kind 未知：${dto.installKind}")
+    }
+
+    val sourceUrl = dto.sourceUrl.trim()
+    if (sourceUrl.isNotEmpty() && !isHttpUrl(sourceUrl)) {
+        return EntryValidation.Invalid("source_url 不是 http/https 地址")
+    }
+
+    val remoteUrl = dto.remoteUrl.trim()
+    if (remoteUrl.isNotEmpty() && !isHttpUrl(remoteUrl)) {
+        return EntryValidation.Invalid("remote_url 不是 http/https 地址")
+    }
+
+    // 没给内嵌内容又没给下载地址，装不出东西来
+    if (installKind == InstallKind.INLINE && dto.content.isBlank() && sourceUrl.isEmpty()) {
+        return EntryValidation.Invalid("inline 条目既没有 content 也没有 source_url")
+    }
+    if (installKind == InstallKind.REMOTE && sourceUrl.isEmpty() && remoteUrl.isEmpty()) {
+        return EntryValidation.Invalid("remote 条目缺少地址")
+    }
+
+    val sha256 = normalizeSha256(dto.sha256)
+    if (dto.sha256.isNotBlank() && sha256 == null) {
+        return EntryValidation.Invalid("sha256 不是 64 位十六进制")
+    }
+
+    val name = dto.name.trim().ifEmpty { id }
+
+    return EntryValidation.Valid(
+        RecommendEntry(
+            id = id,
+            type = type,
+            name = name,
+            version = dto.version.trim(),
+            author = dto.author.trim(),
+            description = dto.description.trim(),
+            tags = dto.tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
+            sourceUrl = sourceUrl,
+            sha256 = sha256.orEmpty(),
+            installKind = installKind,
+            deps = dto.deps.map { it.trim() }.filter { it.isNotEmpty() },
+            deployDoc = dto.deployDoc,
+            sort = dto.sort,
+            content = dto.content,
+            remoteUrl = remoteUrl,
+            runCommand = dto.runCommand.trim(),
+            originId = "",
+            originName = "",
+        )
+    )
+}
+
+/** 只接受 http/https，其它 scheme（file://、content://、data:）一律当非法，避免被引导去本地路径。 */
+fun isHttpUrl(url: String): Boolean {
+    val trimmed = url.trim()
+    if (!trimmed.startsWith("http://", ignoreCase = true) && !trimmed.startsWith("https://", ignoreCase = true)) {
+        return false
+    }
+    val host = trimmed.substringAfter("://").substringBefore('/').substringBefore('?').substringBefore('#')
+    return host.isNotBlank() && !host.contains(' ') && host.contains('.')
+}
+
+/** 规范化 sha256：去空白、转小写；不是 64 位十六进制时返回 null。 */
+fun normalizeSha256(value: String): String? {
+    val normalized = value.trim().lowercase().replace(" ", "")
+    if (normalized.length != 64) return null
+    if (!normalized.all { it in '0'..'9' || it in 'a'..'f' }) return null
+    return normalized
+}
+
+/** 计算字节流的 sha256（小写十六进制），用于安装前校验。 */
+fun sha256Hex(bytes: ByteArray): String =
+    MessageDigest.getInstance("SHA-256")
+        .digest(bytes)
+        .joinToString("") { "%02x".format(it) }
+
+/** 校验内容与 index 声明的 sha256 是否一致；声明缺失时返回 false，由调用方决定是否放行。 */
+fun matchesSha256(bytes: ByteArray, expected: String): Boolean {
+    val normalized = normalizeSha256(expected) ?: return false
+    return sha256Hex(bytes) == normalized
+}
+
+/** 按用户选的排序方式排列表。 */
+fun sortEntries(entries: List<RecommendEntry>, sort: RecommendSort): List<RecommendEntry> =
+    when (sort) {
+        RecommendSort.DEFAULT -> entries.sortedWith(compareBy({ it.sort }, { it.name.lowercase() }))
+        RecommendSort.NAME_ASC -> entries.sortedBy { it.name.lowercase() }
+        RecommendSort.NAME_DESC -> entries.sortedByDescending { it.name.lowercase() }
+        RecommendSort.AUTHOR -> entries.sortedWith(compareBy({ it.author.lowercase() }, { it.sort }, { it.name.lowercase() }))
+        RecommendSort.RUNTIME -> entries.sortedWith(
+            compareBy({ installKindPriority(it.installKind) }, { it.sort }, { it.name.lowercase() })
+        )
+    }
+
+/** RUNTIME 排序里各类安装方式的分组顺序：一键能用的在前，要跑命令的在后面。 */
+private fun installKindPriority(kind: InstallKind): Int = when (kind) {
+    InstallKind.INLINE -> 0
+    InstallKind.REMOTE -> 1
+    InstallKind.NPX -> 2
+    InstallKind.UVX -> 3
+    InstallKind.DOCKER -> 4
+}
+
+/** 搜索：匹配名称 / 描述 / 作者 / 标签 / id。 */
+fun filterEntries(entries: List<RecommendEntry>, query: String): List<RecommendEntry> {
+    val keyword = query.trim()
+    if (keyword.isEmpty()) return entries
+    return entries.filter { entry ->
+        entry.name.contains(keyword, ignoreCase = true) ||
+            entry.description.contains(keyword, ignoreCase = true) ||
+            entry.author.contains(keyword, ignoreCase = true) ||
+            entry.id.contains(keyword, ignoreCase = true) ||
+            entry.tags.any { it.contains(keyword, ignoreCase = true) }
+    }
+}
+
+/** 需要在设备上跑起来的启动命令；inline/remote 没有命令。 */
+fun runtimeCommand(entry: RecommendEntry): String = entry.runCommand.ifBlank {
+    when (entry.installKind) {
+        InstallKind.NPX -> "npx -y ${entry.id}"
+        InstallKind.UVX -> "uvx ${entry.id}"
+        InstallKind.DOCKER -> "docker run -i --rm ${entry.id}"
+        InstallKind.REMOTE, InstallKind.INLINE -> ""
+    }
+}
+
+/** 检测运行时的命令，部署页的「检测运行时」按钮用。 */
+fun runtimeProbeCommand(kind: InstallKind): String = when (kind) {
+    InstallKind.NPX -> "node --version && npx --version"
+    InstallKind.UVX -> "uv --version || uvx --version"
+    InstallKind.DOCKER -> "docker --version"
+    InstallKind.REMOTE, InstallKind.INLINE -> ""
+}
+
+/**
+ * skill 压缩包的解包结果。
+ *
+ * [files] 的 key 已经剥掉了 skill 根目录前缀（SKILL.md 固定在根），可以直接交给 SkillManager 落盘。
+ */
+data class SkillArchive(
+    val files: Map<String, ByteArray>,
+    val skillName: String,
+)
+
+sealed interface SkillArchiveResult {
+    data class Success(val archive: SkillArchive) : SkillArchiveResult
+    data class Failure(val message: String) : SkillArchiveResult
+}
+
+/**
+ * 解出压缩包里的一个 skill。
+ *
+ * 只取**最外层**的 SKILL.md（压缩包里常见 `repo-main/skills/foo/SKILL.md` 这种多层结构），
+ * 并把同目录下的附属文件一并带上；`..` 之类的路径直接丢弃，防止把内容写到沙箱外。
+ */
+fun extractSkillArchive(bytes: ByteArray): SkillArchiveResult {
+    val files = LinkedHashMap<String, ByteArray>()
+    try {
+        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                try {
+                    if (!entry.isDirectory) {
+                        val path = normalizeArchivePath(entry.name)
+                        if (path != null) files[path] = zip.readBytes()
+                    }
+                } finally {
+                    zip.closeEntry()
+                }
+            }
+        }
+    } catch (e: Exception) {
+        return SkillArchiveResult.Failure("解压失败：${e.message ?: "压缩包已损坏"}")
+    }
+
+    if (files.isEmpty()) return SkillArchiveResult.Failure("压缩包里没有文件")
+
+    val skillMdPath = files.keys
+        .filter { it.substringAfterLast('/').equals("SKILL.md", ignoreCase = true) }
+        .minByOrNull { it.count { char -> char == '/' } }
+        ?: return SkillArchiveResult.Failure("压缩包里没有 SKILL.md")
+
+    val basePath = skillMdPath.substringBeforeLast('/', missingDelimiterValue = "")
+
+    // 只保留这一个 skill 目录下的文件：嵌套的子 skill 目录会被丢弃
+    val nestedSkillBases = files.keys
+        .filter { it.substringAfterLast('/').equals("SKILL.md", ignoreCase = true) }
+        .map { it.substringBeforeLast('/', missingDelimiterValue = "") }
+        .filter { it != basePath && isInsidePath(it, basePath) }
+
+    val relativeFiles = LinkedHashMap<String, ByteArray>()
+    for ((path, content) in files) {
+        if (nestedSkillBases.any { nested -> isInsidePath(path, nested) }) continue
+        val relative = if (basePath.isEmpty()) path else {
+            if (path == basePath) continue
+            path.removePrefix("$basePath/").takeIf { it != path } ?: continue
+        }
+        val target = if (relative.equals("SKILL.md", ignoreCase = true)) "SKILL.md" else relative
+        relativeFiles[target] = content
+    }
+
+    val skillMd = relativeFiles["SKILL.md"]?.toString(Charsets.UTF_8)
+        ?: return SkillArchiveResult.Failure("SKILL.md 读取失败")
+
+    val frontmatter = SkillFrontmatterParser.parse(skillMd)
+    val name = frontmatter["name"]?.trim().orEmpty()
+    if (name.isBlank()) return SkillArchiveResult.Failure("SKILL.md 缺少 name 字段")
+    if (frontmatter["description"].isNullOrBlank()) {
+        return SkillArchiveResult.Failure("SKILL.md 缺少 description 字段")
+    }
+
+    return SkillArchiveResult.Success(SkillArchive(files = relativeFiles, skillName = name))
+}
+
+private fun isInsidePath(path: String, base: String): Boolean =
+    base.isNotEmpty() && (path == base || path.startsWith("$base/"))
+
+/** 归一化压缩包内路径：丢掉绝对路径、`.`、`..` 段，返回 null 表示该条目不可用。 */
+internal fun normalizeArchivePath(path: String): String? {
+    val parts = path.replace('\\', '/')
+        .trimStart('/')
+        .split('/')
+        .filter { it.isNotBlank() && it != "." }
+    if (parts.isEmpty() || parts.any { it == ".." }) return null
+    return parts.joinToString("/")
+}

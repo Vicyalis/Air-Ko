@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- WP9 추천 스토어 -->
+    <string name="wp9_title_skill">추천 스킬</string>
+    <string name="wp9_title_prompt">추천 프롬프트</string>
+    <string name="wp9_title_quick_message">추천 빠른 메시지</string>
+    <string name="wp9_title_mcp">추천 MCP 서버</string>
+    <string name="wp9_fab_recommend">추천 스토어</string>
+    <string name="wp9_type_skill">스킬</string>
+    <string name="wp9_type_prompt">프롬프트</string>
+    <string name="wp9_type_quick_message">빠른 메시지</string>
+    <string name="wp9_type_mcp">MCP</string>
+    <string name="wp9_runtime_npx">npx / Node.js</string>
+    <string name="wp9_runtime_uvx">uvx / Python</string>
+    <string name="wp9_runtime_docker">Docker</string>
+    <string name="wp9_runtime_remote">원격 서비스</string>
+    <string name="wp9_runtime_inline">내장 콘텐츠</string>
+    <string name="wp9_sort_default">기본</string>
+    <string name="wp9_sort_name_asc">이름 A→Z</string>
+    <string name="wp9_sort_name_desc">이름 Z→A</string>
+    <string name="wp9_sort_author">작성자순</string>
+    <string name="wp9_sort_runtime">설치 방식</string>
+    <string name="wp9_copy">복사</string>
+    <string name="wp9_clear">지우기</string>
+    <string name="wp9_run">실행</string>
+
+    <!-- 목록 페이지 -->
+    <string name="wp9_list_search_placeholder">이름, 설명, 작성자 또는 태그 검색</string>
+    <string name="wp9_list_search_no_result">일치하는 항목이 없습니다</string>
+    <string name="wp9_list_sort_label">정렬</string>
+    <string name="wp9_list_all_sources">모든 소스</string>
+    <string name="wp9_list_refresh">새로 고침</string>
+    <string name="wp9_list_manage_sources">소스 관리</string>
+    <string name="wp9_list_loading">추천을 불러오는 중…</string>
+    <string name="wp9_list_empty">이 분류에는 아직 추천 항목이 없습니다</string>
+    <string name="wp9_list_empty_hint">「소스 관리」에서 소스를 추가하거나 활성화할 수 있습니다</string>
+    <string name="wp9_list_failed">불러오기 실패</string>
+    <string name="wp9_list_failed_hint">활성화된 모든 소스를 불러오지 못했습니다. 네트워크와 소스 URL을 확인한 후 다시 시도하세요.</string>
+    <string name="wp9_list_retry">다시 시도</string>
+    <string name="wp9_list_installed">설치됨</string>
+    <string name="wp9_list_version_format">v%1$s</string>
+    <string name="wp9_list_cached_banner">캐시 데이터: 일부 소스를 가져오지 못해 마지막으로 성공한 내용을 표시합니다</string>
+    <string name="wp9_list_skipped_notice">잘못된 항목 %1$d개를 건너뛰었습니다</string>
+    <string name="wp9_list_source_error_format">%1$s: %2$s</string>
+
+    <!-- 상세 페이지 -->
+    <string name="wp9_detail_not_found">항목을 찾을 수 없습니다: 소스에서 제거되었거나 해당 소스가 비활성화되었을 수 있습니다</string>
+    <string name="wp9_detail_security">보안 확인</string>
+    <string name="wp9_detail_source">소스 URL</string>
+    <string name="wp9_detail_sha256">SHA-256 체크섬</string>
+    <string name="wp9_detail_no_sha">이 항목에는 sha256이 없어 무결성을 확인할 수 없습니다</string>
+    <string name="wp9_detail_security_hint">설치되는 내용은 AI의 동작을 바꿉니다. 소스 URL을 신뢰할 수 있고 체크섬이 배포자가 공개한 값과 일치하는지 확인하세요.</string>
+    <string name="wp9_detail_deploy_doc">배포 안내</string>
+    <string name="wp9_detail_mcp_config">MCP 설정 스니펫</string>
+    <string name="wp9_detail_open_install">설치 / 배포</string>
+    <string name="wp9_detail_reinstall">다시 설치</string>
+
+    <!-- 설치 페이지 -->
+    <string name="wp9_install_title">설치 및 배포</string>
+    <string name="wp9_install_run">다운로드 후 설치</string>
+    <string name="wp9_install_reinstall">다시 설치</string>
+    <string name="wp9_install_running">%1$s 설치 중…</string>
+    <string name="wp9_install_success">설치 완료</string>
+    <string name="wp9_install_failed">설치 실패</string>
+    <string name="wp9_install_steps">실행 기록</string>
+    <string name="wp9_install_retry">처음부터 다시</string>
+    <string name="wp9_confirm_title">보안 확인</string>
+    <string name="wp9_confirm_message">「%1$s」을(를) 설치합니다.\n소스: %2$s\nSHA-256: %3$s\n\n소스를 신뢰할 수 있을 때만 계속하세요.</string>
+    <string name="wp9_confirm_accept">확인했습니다, 계속</string>
+    <string name="wp9_mcp_oneclick">MCP 설정에 쓰기</string>
+    <string name="wp9_mcp_config_title">MCP 설정</string>
+    <string name="wp9_mcp_local_warning">로컬 stdio 서버(npx/uvx/docker)는 설정에 직접 쓸 수 없습니다. 아래 단계에 따라 터미널에서 실행한 뒤, 노출된 HTTP 주소를 MCP 설정에 수동으로 추가하세요.</string>
+    <string name="wp9_deploy_section">배포</string>
+    <string name="wp9_deploy_runtime">%1$s 실행 환경 필요</string>
+    <string name="wp9_deploy_runtime_hint">아래 명령은 내장 워크스페이스 터미널에서 실행됩니다. 복사해서 직접 실행할 수도 있습니다.</string>
+    <string name="wp9_deploy_probe">실행 환경 확인</string>
+    <string name="wp9_deploy_deps">의존성</string>
+    <string name="wp9_deploy_run_command">시작 명령</string>
+    <string name="wp9_deploy_run_in_terminal">터미널에서 실행</string>
+    <string name="wp9_deploy_doc">배포 안내</string>
+    <string name="wp9_deploy_terminal">내장 터미널 출력</string>
+    <string name="wp9_deploy_terminal_hint">명령은 상주 워크스페이스 터미널에서 실행됩니다. 추가 확인이 필요하면 채팅에서 AI에게 도움을 요청하세요.</string>
+    <string name="wp9_deploy_terminal_unavailable">사용 가능한 워크스페이스 터미널이 없습니다. 먼저 「워크스페이스」에서 Linux 환경을 설치한 후 배포 명령을 실행하세요.</string>
+    <string name="wp9_deploy_go_workspaces">워크스페이스로</string>
+    <string name="wp9_deploy_terminal_running">%1$s 실행 중(%2$s)</string>
+    <string name="wp9_deploy_terminal_exit">종료 코드: %1$d</string>
+    <string name="wp9_deploy_terminal_timeout">(명령이 시간 초과되어 중단되었습니다)</string>
+    <string name="wp9_deploy_terminal_failed">실행 실패: %1$s</string>
+
+    <!-- 소스 관리 페이지 -->
+    <string name="wp9_sources_title">추천 소스 관리</string>
+    <string name="wp9_sources_add">소스 추가</string>
+    <string name="wp9_sources_add_title">추천 소스 추가</string>
+    <string name="wp9_sources_edit_title">추천 소스 편집</string>
+    <string name="wp9_sources_name">이름</string>
+    <string name="wp9_sources_url">Index URL</string>
+    <string name="wp9_sources_url_hint">추천 index(JSON)를 가리키는 URL입니다. http/https만 지원합니다.</string>
+    <string name="wp9_sources_save">저장</string>
+    <string name="wp9_sources_edit">편집</string>
+    <string name="wp9_sources_delete">삭제</string>
+    <string name="wp9_sources_delete_title">소스 삭제</string>
+    <string name="wp9_sources_delete_confirm">추천 소스 「%1$s」을(를) 삭제할까요?</string>
+    <string name="wp9_sources_move_up">위로</string>
+    <string name="wp9_sources_move_down">아래로</string>
+    <string name="wp9_sources_builtin">내장</string>
+    <string name="wp9_sources_local">로컬</string>
+    <string name="wp9_sources_local_name">내장 예시 콘텐츠</string>
+    <string name="wp9_sources_unknown">알 수 없는 소스</string>
+    <string name="wp9_sources_disabled">사용 중지됨</string>
+    <string name="wp9_sources_drag_hint">길게 눌러 드래그해 정렬할 수 있습니다. 중복 항목이 있으면 목록에서 앞선 소스가 우선됩니다.</string>
+    <string name="wp9_sources_readonly_hint">내장 소스는 삭제할 수 없으며, 로컬 소스는 항상 활성화됩니다.</string>
+    <string name="wp9_sources_reset">기본 소스 복원</string>
+    <string name="wp9_sources_reset_confirm_title">기본 소스로 복원할까요?</string>
+    <string name="wp9_sources_reset_confirm_message">출고 시 소스 목록(로컬 내장 소스 포함)으로 복원되며, 직접 추가한 소스는 제거됩니다.</string>
+    <string name="wp9_sources_reset_confirm_accept">복원</string>
+    <string name="wp9_sources_feedback_added">추천 소스를 추가했습니다</string>
+    <string name="wp9_sources_feedback_updated">변경 사항을 저장했습니다</string>
+    <string name="wp9_sources_feedback_removed">추천 소스를 삭제했습니다</string>
+    <string name="wp9_sources_feedback_reset">기본 소스로 복원했습니다</string>
+    <string name="wp9_sources_feedback_invalid_url">잘못된 주소: http/https만 지원하며 호스트 이름이 필요합니다</string>
+    <string name="wp9_sources_feedback_duplicate">이 주소는 이미 존재합니다</string>
+    <string name="wp9_sources_feedback_not_found">해당 소스를 찾을 수 없습니다</string>
+</resources>

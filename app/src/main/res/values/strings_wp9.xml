@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- WP9 recommendation store -->
+    <string name="wp9_title_skill">Recommended Skills</string>
+    <string name="wp9_title_prompt">Recommended Prompts</string>
+    <string name="wp9_title_quick_message">Recommended Quick Messages</string>
+    <string name="wp9_title_mcp">Recommended MCP Servers</string>
+    <string name="wp9_fab_recommend">Recommend store</string>
+    <string name="wp9_type_skill">Skill</string>
+    <string name="wp9_type_prompt">Prompt</string>
+    <string name="wp9_type_quick_message">Quick Message</string>
+    <string name="wp9_type_mcp">MCP</string>
+    <string name="wp9_runtime_npx">npx / Node.js</string>
+    <string name="wp9_runtime_uvx">uvx / Python</string>
+    <string name="wp9_runtime_docker">Docker</string>
+    <string name="wp9_runtime_remote">Remote service</string>
+    <string name="wp9_runtime_inline">Inline content</string>
+    <string name="wp9_sort_default">Default</string>
+    <string name="wp9_sort_name_asc">Name A→Z</string>
+    <string name="wp9_sort_name_desc">Name Z→A</string>
+    <string name="wp9_sort_author">Author</string>
+    <string name="wp9_sort_runtime">Install method</string>
+    <string name="wp9_copy">Copy</string>
+    <string name="wp9_clear">Clear</string>
+    <string name="wp9_run">Run</string>
+
+    <!-- List page -->
+    <string name="wp9_list_search_placeholder">Search name, description, author or tag</string>
+    <string name="wp9_list_search_no_result">No matching entries</string>
+    <string name="wp9_list_sort_label">Sort</string>
+    <string name="wp9_list_all_sources">All sources</string>
+    <string name="wp9_list_refresh">Refresh</string>
+    <string name="wp9_list_manage_sources">Manage sources</string>
+    <string name="wp9_list_loading">Loading recommendations…</string>
+    <string name="wp9_list_empty">No recommendations in this category yet</string>
+    <string name="wp9_list_empty_hint">Add or enable more sources under \"Manage sources\"</string>
+    <string name="wp9_list_failed">Failed to load</string>
+    <string name="wp9_list_failed_hint">All enabled sources failed to load. Check your network and the source addresses, then retry.</string>
+    <string name="wp9_list_retry">Retry</string>
+    <string name="wp9_list_installed">Installed</string>
+    <string name="wp9_list_version_format">v%1$s</string>
+    <string name="wp9_list_cached_banner">Cached data: some sources could not be fetched, showing the last successful result</string>
+    <string name="wp9_list_skipped_notice">%1$d invalid entries were skipped</string>
+    <string name="wp9_list_source_error_format">%1$s: %2$s</string>
+
+    <!-- Detail page -->
+    <string name="wp9_detail_not_found">Entry not found: it may have been removed from the source, or the source is disabled</string>
+    <string name="wp9_detail_security">Security check</string>
+    <string name="wp9_detail_source">Source URL</string>
+    <string name="wp9_detail_sha256">SHA-256 checksum</string>
+    <string name="wp9_detail_no_sha">This entry provides no sha256, so integrity cannot be verified</string>
+    <string name="wp9_detail_security_hint">Installed content can change how the AI behaves. Make sure the source URL is trustworthy and the checksum matches the publisher\'s.</string>
+    <string name="wp9_detail_deploy_doc">Deployment notes</string>
+    <string name="wp9_detail_mcp_config">MCP config snippet</string>
+    <string name="wp9_detail_open_install">Install / Deploy</string>
+    <string name="wp9_detail_reinstall">Reinstall</string>
+
+    <!-- Install page -->
+    <string name="wp9_install_title">Install &amp; Deploy</string>
+    <string name="wp9_install_run">Download &amp; install</string>
+    <string name="wp9_install_reinstall">Reinstall</string>
+    <string name="wp9_install_running">Installing %1$s…</string>
+    <string name="wp9_install_success">Installed</string>
+    <string name="wp9_install_failed">Install failed</string>
+    <string name="wp9_install_steps">Steps</string>
+    <string name="wp9_install_retry">Start over</string>
+    <string name="wp9_confirm_title">Security confirmation</string>
+    <string name="wp9_confirm_message">About to install \"%1$s\".\nSource: %2$s\nSHA-256: %3$s\n\nContinue only if you trust this source.</string>
+    <string name="wp9_confirm_accept">I understand, continue</string>
+    <string name="wp9_mcp_oneclick">Write to MCP settings</string>
+    <string name="wp9_mcp_config_title">MCP config</string>
+    <string name="wp9_mcp_local_warning">Local stdio servers (npx/uvx/docker) cannot be written to settings directly. Follow the steps below to run it in the terminal, then add its exposed HTTP address to MCP settings manually.</string>
+    <string name="wp9_deploy_section">Deployment</string>
+    <string name="wp9_deploy_runtime">Requires %1$s runtime</string>
+    <string name="wp9_deploy_runtime_hint">Commands below run in the built-in workspace terminal. You can also copy them and run them yourself.</string>
+    <string name="wp9_deploy_probe">Check runtime</string>
+    <string name="wp9_deploy_deps">Dependencies</string>
+    <string name="wp9_deploy_run_command">Start command</string>
+    <string name="wp9_deploy_run_in_terminal">Run in terminal</string>
+    <string name="wp9_deploy_doc">Deployment notes</string>
+    <string name="wp9_deploy_terminal">Terminal output</string>
+    <string name="wp9_deploy_terminal_hint">Commands run in the resident workspace terminal; ask the AI in chat if you need to debug further.</string>
+    <string name="wp9_deploy_terminal_unavailable">No workspace terminal available. Install a Linux environment on the Workspaces page first, then come back to run deployment commands.</string>
+    <string name="wp9_deploy_go_workspaces">Open Workspaces</string>
+    <string name="wp9_deploy_terminal_running">Running %1$s (%2$s)</string>
+    <string name="wp9_deploy_terminal_exit">Exit code: %1$d</string>
+    <string name="wp9_deploy_terminal_timeout">(command timed out and was interrupted)</string>
+    <string name="wp9_deploy_terminal_failed">Execution failed: %1$s</string>
+
+    <!-- Sources page -->
+    <string name="wp9_sources_title">Recommend sources</string>
+    <string name="wp9_sources_add">Add source</string>
+    <string name="wp9_sources_add_title">Add recommend source</string>
+    <string name="wp9_sources_edit_title">Edit recommend source</string>
+    <string name="wp9_sources_name">Name</string>
+    <string name="wp9_sources_url">Index URL</string>
+    <string name="wp9_sources_url_hint">Points to a recommend index (JSON). Only http/https is supported.</string>
+    <string name="wp9_sources_save">Save</string>
+    <string name="wp9_sources_edit">Edit</string>
+    <string name="wp9_sources_delete">Delete</string>
+    <string name="wp9_sources_delete_title">Delete source</string>
+    <string name="wp9_sources_delete_confirm">Delete recommend source \"%1$s\"?</string>
+    <string name="wp9_sources_move_up">Move up</string>
+    <string name="wp9_sources_move_down">Move down</string>
+    <string name="wp9_sources_builtin">Built-in</string>
+    <string name="wp9_sources_local">Local</string>
+    <string name="wp9_sources_local_name">Bundled sample content</string>
+    <string name="wp9_sources_unknown">Unknown source</string>
+    <string name="wp9_sources_disabled">Disabled</string>
+    <string name="wp9_sources_drag_hint">Long-press to drag and reorder. Order decides which source wins when duplicates appear.</string>
+    <string name="wp9_sources_readonly_hint">Built-in sources cannot be deleted; the local source is always enabled.</string>
+    <string name="wp9_sources_reset">Restore default sources</string>
+    <string name="wp9_sources_reset_confirm_title">Restore default sources?</string>
+    <string name="wp9_sources_reset_confirm_message">The factory source list (including the local bundled source) will be restored, and sources you added will be removed.</string>
+    <string name="wp9_sources_reset_confirm_accept">Restore</string>
+    <string name="wp9_sources_feedback_added">Source added</string>
+    <string name="wp9_sources_feedback_updated">Changes saved</string>
+    <string name="wp9_sources_feedback_removed">Source deleted</string>
+    <string name="wp9_sources_feedback_reset">Default sources restored</string>
+    <string name="wp9_sources_feedback_invalid_url">Invalid URL: only http/https with a host name</string>
+    <string name="wp9_sources_feedback_duplicate">This URL already exists</string>
+    <string name="wp9_sources_feedback_not_found">Source not found</string>
+</resources>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  设备控制（无障碍）服务配置。
+  配置项取自 Reticle (https://github.com/Bumfuzzle-app/reticle) 的同名文件（Apache-2.0）：
+  读窗口内容 + 上报 viewId（模型需要 id 来找控件）+ 手势注入 + 截屏（Android 11 起）。
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+  android:accessibilityEventTypes="typeWindowStateChanged"
+  android:accessibilityFeedbackType="feedbackGeneric"
+  android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+  android:canPerformGestures="true"
+  android:canRetrieveWindowContent="true"
+  android:canTakeScreenshot="true"
+  android:description="@string/device_control_service_description"
+  android:notificationTimeout="100"
+  android:summary="@string/device_control_service_summary" />

@@ -1,0 +1,540 @@
+package me.rerere.rikkahub.ui.pages.stats
+
+import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ChartColumn
+import me.rerere.hugeicons.stroke.Cpu
+import me.rerere.hugeicons.stroke.Message01
+import me.rerere.hugeicons.stroke.Rocket01
+import me.rerere.hugeicons.stroke.Tag01
+import me.rerere.hugeicons.stroke.Zap
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.model.CostCoverage
+import me.rerere.rikkahub.data.model.ModelCost
+import me.rerere.rikkahub.data.model.Money
+import me.rerere.rikkahub.data.model.formatCosts
+import me.rerere.rikkahub.data.model.formatMoney
+import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.theme.CustomColors
+import me.rerere.rikkahub.utils.plus
+import org.koin.androidx.compose.koinViewModel
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.format.TextStyle
+import java.time.temporal.TemporalAdjusters
+import java.util.Locale
+
+@Composable
+fun StatsPage(vm: StatsVM = koinViewModel()) {
+    val stats by vm.stats.collectAsStateWithLifecycle()
+    val navController = LocalNavController.current
+
+    // 从模型价格页返回时重算：改过的价格要立刻反映到金额上
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        vm.refresh()
+    }
+
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            LargeFlexibleTopAppBar(
+                title = { Text(stringResource(R.string.stats_page_title)) },
+                navigationIcon = { BackButton() },
+                scrollBehavior = scrollBehavior,
+                colors = CustomColors.topBarColors,
+            )
+        },
+        containerColor = CustomColors.topBarColors.containerColor,
+    ) { padding ->
+        if (stats.isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = padding + PaddingValues(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item {
+                    HeatmapCard(
+                        conversationsPerDay = stats.conversationsPerDay,
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
+                }
+                item {
+                    StatsGrid(
+                        stats = stats,
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
+                }
+                item {
+                    CostCard(
+                        stats = stats,
+                        onOpenModelPrices = { navController.navigate(Screen.ModelPricing) },
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeatmapCard(conversationsPerDay: Map<LocalDate, Int>, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CustomColors.cardColorsOnSurfaceContainer,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(stringResource(R.string.stats_page_heatmap_title), style = MaterialTheme.typography.titleMedium)
+
+            ChatHeatmap(conversationsPerDay = conversationsPerDay)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.stats_page_heatmap_less),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(2.dp))
+                listOf(0f, 0.25f, 0.5f, 0.75f, 1f).forEach { alpha ->
+                    HeatmapCell(alpha = alpha, sizeDp = 10)
+                }
+                Spacer(Modifier.width(2.dp))
+                Text(
+                    text = stringResource(R.string.stats_page_heatmap_more),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatHeatmap(conversationsPerDay: Map<LocalDate, Int>) {
+    val today = LocalDate.now()
+    val startSunday = today
+        .with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
+        .minusWeeks(52)
+
+    val numWeeks = 53
+    val activeCounts = conversationsPerDay.values.filter { it > 0 }.sorted()
+    val q1 = activeCounts.getOrElse((activeCounts.size * 0.25).toInt()) { 1 }
+    val q2 = activeCounts.getOrElse((activeCounts.size * 0.50).toInt()) { 2 }
+    val q3 = activeCounts.getOrElse((activeCounts.size * 0.75).toInt()) { 3 }
+    val cellSize = 11.dp
+    val cellSpacing = 2.dp
+    // Month label row height
+    val monthLabelHeight = 14.dp
+
+    // Day-of-week labels (only Mon/Wed/Fri to save space, Sun=0)
+    val dowLabels = listOf(
+        "",
+        stringResource(R.string.stats_page_dow_mon),
+        "",
+        stringResource(R.string.stats_page_dow_wed),
+        "",
+        stringResource(R.string.stats_page_dow_fri),
+        ""
+    )
+
+    // Shared scroll state so month labels + grid scroll together
+    val scrollState = rememberScrollState(initial = Int.MAX_VALUE)
+
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Fixed left column: spacer for month label row + DOW labels
+        Column(
+            modifier = Modifier.width(12.dp),
+            verticalArrangement = Arrangement.spacedBy(cellSpacing),
+        ) {
+            Spacer(Modifier.height(monthLabelHeight + 2.dp))
+            dowLabels.forEach { label ->
+                Box(
+                    modifier = Modifier.size(cellSize),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (label.isNotEmpty()) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = MaterialTheme.typography.labelSmall.fontSize * 0.7,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+
+        // Scrollable area: month labels + heatmap grid share one scroll state
+        Column(
+            modifier = Modifier.horizontalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            // Month labels row
+            Row(horizontalArrangement = Arrangement.spacedBy(cellSpacing)) {
+                for (weekIdx in 0 until numWeeks) {
+                    val weekStart = startSunday.plusDays((weekIdx * 7).toLong())
+                    val labelDate = (0..6)
+                        .map { weekStart.plusDays(it.toLong()) }
+                        .firstOrNull { it.dayOfMonth == 1 }
+                    Box(
+                        modifier = Modifier
+                            .width(cellSize)
+                            .height(monthLabelHeight),
+                        contentAlignment = Alignment.BottomStart,
+                    ) {
+                        if (labelDate != null) {
+                            Text(
+                                text = if (labelDate.monthValue == 1) {
+                                    labelDate.year.toString()
+                                } else {
+                                    labelDate.month.getDisplayName(TextStyle.SHORT, Locale.getDefault())
+                                },
+                                modifier = Modifier.wrapContentWidth(unbounded = true),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = MaterialTheme.typography.labelSmall.fontSize * 0.75,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                softWrap = false,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Heatmap grid
+            Row(horizontalArrangement = Arrangement.spacedBy(cellSpacing)) {
+                for (weekIdx in 0 until numWeeks) {
+                    Column(verticalArrangement = Arrangement.spacedBy(cellSpacing)) {
+                        for (dow in 0..6) {
+                            val date = startSunday.plusDays((weekIdx * 7 + dow).toLong())
+                            val isFuture = date.isAfter(today)
+                            val count = if (isFuture) 0 else (conversationsPerDay[date] ?: 0)
+                            val alpha = when {
+                                isFuture -> -1f
+                                count == 0 -> 0f
+                                count <= q1 -> 0.25f
+                                count <= q2 -> 0.5f
+                                count <= q3 -> 0.75f
+                                else -> 1f
+                            }
+                            HeatmapCell(alpha = alpha, sizeDp = cellSize.value.toInt())
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeatmapCell(alpha: Float, sizeDp: Int) {
+    val color = when {
+        alpha < 0f -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f) // future
+        alpha == 0f -> MaterialTheme.colorScheme.surfaceVariant
+        else -> MaterialTheme.colorScheme.primary.copy(alpha = alpha)
+    }
+    Box(
+        modifier = Modifier
+            .size(sizeDp.dp)
+            .clip(MaterialTheme.shapes.extraSmall)
+            .background(color)
+    )
+}
+
+@Composable
+private fun StatsGrid(stats: AppStats, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            StatCard(
+                modifier = Modifier.weight(1f),
+                icon = HugeIcons.ChartColumn,
+                label = stringResource(R.string.stats_page_total_conversations),
+                value = formatCount(stats.totalConversations.toLong()),
+            )
+            StatCard(
+                modifier = Modifier.weight(1f),
+                icon = HugeIcons.Message01,
+                label = stringResource(R.string.stats_page_total_messages),
+                value = formatCount(stats.totalMessages.toLong()),
+            )
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            StatCard(
+                modifier = Modifier.weight(1f),
+                icon = HugeIcons.Cpu,
+                label = stringResource(R.string.stats_page_input_tokens),
+                value = formatTokens(stats.totalPromptTokens),
+            )
+            StatCard(
+                modifier = Modifier.weight(1f),
+                icon = HugeIcons.Cpu,
+                label = stringResource(R.string.stats_page_output_tokens),
+                value = formatTokens(stats.totalCompletionTokens),
+            )
+        }
+        if (stats.totalCachedTokens > 0) {
+            StatCard(
+                modifier = Modifier.fillMaxWidth(),
+                icon = HugeIcons.Zap,
+                label = stringResource(R.string.stats_page_cached_tokens),
+                value = formatTokens(stats.totalCachedTokens),
+            )
+        }
+        StatCard(
+            modifier = Modifier.fillMaxWidth(),
+            icon = HugeIcons.Rocket01,
+            label = stringResource(R.string.stats_page_launch_count),
+            value = formatCount(stats.launchCount.toLong()),
+        )
+    }
+}
+
+@Composable
+private fun CostCard(
+    stats: AppStats,
+    onOpenModelPrices: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(modifier = modifier.fillMaxWidth(), colors = CustomColors.cardColorsOnSurfaceContainer) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(R.string.stats_page_cost_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                // 价格表在统计里看，入口也放在这里：点开能覆盖/修正每个模型的价格
+                IconButton(onClick = onOpenModelPrices) {
+                    Icon(
+                        imageVector = HugeIcons.Tag01,
+                        contentDescription = stringResource(R.string.stats_page_cost_prices_action),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                text = formatCosts(stats.totalCosts) ?: formatMoney(Money.ZERO),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            Text(
+                text = stringResource(R.string.stats_page_cost_estimate_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            // 覆盖率：只算了有价格的模型，如实说明有多少没算进来（对齐 Reasonix 的 coverage 语义）
+            if (stats.billableMessages > 0) {
+                val coverageText = when (stats.coverage) {
+                    CostCoverage.COMPLETE -> stringResource(
+                        R.string.stats_page_cost_coverage_all,
+                        stats.billableMessages,
+                    )
+
+                    CostCoverage.PARTIAL -> stringResource(
+                        R.string.stats_page_cost_coverage_partial,
+                        stats.pricedMessages,
+                        stats.billableMessages,
+                    )
+
+                    CostCoverage.NONE -> stringResource(
+                        R.string.stats_page_cost_coverage_none,
+                        stats.billableMessages,
+                    )
+                }
+                Text(
+                    text = coverageText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            // 缓存明细：命中率 + 省下的钱（缓存价低于输入价才有意义）
+            if (stats.totalCachedTokens > 0) {
+                val hitText = "%.1f%%".format(stats.cacheHitRate * 100)
+                val savedText = formatCosts(stats.cacheSaved)
+                Text(
+                    text = if (savedText != null) {
+                        stringResource(R.string.stats_page_cost_cache_line, hitText, savedText)
+                    } else {
+                        stringResource(R.string.stats_page_cost_cache_hit_only, hitText)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            stats.modelCosts.forEach { cost ->
+                ModelCostRow(cost)
+            }
+            if (stats.unpricedMessages > 0) {
+                Text(
+                    text = stringResource(
+                        R.string.stats_page_cost_unpriced,
+                        stats.unpricedMessages,
+                        stats.unpricedModelCount,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (stats.unpricedModels.isNotEmpty()) {
+                    Text(
+                        text = stringResource(
+                            R.string.stats_page_cost_unpriced_names,
+                            stats.unpricedModels.joinToString(", "),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelCostRow(cost: ModelCost) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = cost.modelKey.ifBlank { stringResource(R.string.stats_page_cost_unknown_model) },
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (cost.overridden) {
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = stringResource(R.string.stats_page_cost_override_tag),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = formatTokens(cost.totalTokens),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = formatMoney(cost.cost ?: Money.ZERO, cost.currency),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
+private fun StatCard(
+    modifier: Modifier = Modifier,
+    icon: ImageVector,
+    label: String,
+    value: String,
+) {
+    Card(modifier = modifier, colors = CustomColors.cardColorsOnSurfaceContainer) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private fun formatCount(count: Long): String = when {
+    count >= 1_000_000 -> "%.1fM".format(count / 1_000_000.0)
+    count >= 1_000 -> "%.1fK".format(count / 1_000.0)
+    else -> count.toString()
+}
+
+private fun formatTokens(count: Long): String = when {
+    count >= 1_000_000_000 -> "%.2fB".format(count / 1_000_000_000.0)
+    count >= 1_000_000 -> "%.2fM".format(count / 1_000_000.0)
+    count >= 1_000 -> "%.1fK".format(count / 1_000.0)
+    else -> count.toString()
+}

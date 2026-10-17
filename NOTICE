@@ -1,0 +1,80 @@
+Air-Ko
+Copyright 2026 Air-Ko contributors
+
+This product is a fork of RikkaHub (https://github.com/rikkahub/rikkahub, AGPL-3.0) and
+includes a device-control capability layer derived from Reticle.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+1) Shizuku API (RikkaApps/Shizuku-API, dev.rikka.shizuku:api / :provider 13.1.5) — MIT License
+   Used to run shell commands as the ADB (shell) or root user (device_shell, device_install,
+   device_uninstall, device_force_stop, device_settings, device_input, device_screencap).
+   Shizuku itself is a separate application installed by the user; it is not bundled here.
+   The app also supports Sui (the Magisk module) automatically through the same API.
+
+2) Google ML Kit text-recognition (bundled Chinese model) — Google ML Kit Terms of Service
+   Used for offline on-screen text recognition (device_ocr). No ML Kit binaries are
+   redistributed by this repository; the dependency is resolved from Google's Maven repository.
+
+3) AndroidX / AppCompat / Material Components / Kotlin stdlib / Ktor / Coil / Room and other
+   libraries — Apache-2.0, MIT or equivalent; see each project for details.
+
+--------------------------------------------------------------------------------
+Derived work: Reticle
+--------------------------------------------------------------------------------
+
+Files derived from Reticle (modified: rewritten in Kotlin, integrated into the app as built-in
+tools/UI instead of an MCP server; Shizuku-based shell access and the developer "build" tool were
+removed; the vision flow engine was not ported):
+
+  app/src/main/java/me/rerere/rikkahub/device/DeviceControlService.kt
+  app/src/main/java/me/rerere/rikkahub/device/DeviceControlOps.kt
+  app/src/main/java/me/rerere/rikkahub/device/DeviceControlTextOps.kt
+  app/src/main/java/me/rerere/rikkahub/device/DeviceControlState.kt
+  app/src/main/java/me/rerere/rikkahub/device/DeviceControlWatchdog.kt
+  app/src/main/java/me/rerere/rikkahub/device/DeviceControlWatchdogService.kt
+  app/src/main/java/me/rerere/rikkahub/device/DeviceControlBootReceiver.kt
+  app/src/main/java/me/rerere/rikkahub/device/DeviceControlMemGuard.kt
+  app/src/main/java/me/rerere/rikkahub/device/DeviceControlNotifier.kt
+  app/src/main/java/me/rerere/rikkahub/device/DeviceDownloader.kt
+  app/src/main/java/me/rerere/rikkahub/device/DeviceControlPrefs.kt
+  app/src/main/java/me/rerere/rikkahub/device/DeviceControlAudit.kt
+  app/src/main/java/me/rerere/rikkahub/device/DeviceSelfTestActivity.kt
+  app/src/main/java/me/rerere/rikkahub/device/DeviceControlSelfTest.kt
+  app/src/main/java/me/rerere/rikkahub/data/ai/tools/local/DeviceControlTools.kt
+  app/src/main/res/xml/device_control_accessibility_service.xml
+
+Note on notifications: the notifier (island / media-style / promoted-progress notification
+effects) is a Kotlin re-implementation of Reticle's Notifier.java behaviour built on platform
+notification APIs; no proprietary libraries are involved.
+
+Reticle is licensed under the Apache License, Version 2.0 (see LICENSES/Apache-2.0.txt).
+Reticle's NOTICE content is reproduced below.
+
+Reticle
+Copyright 2026 Bumfuzzle
+
+本产品包含或依赖以下第三方组件：
+
+1) Shizuku API（RikkaApps/Shizuku-API）— MIT License
+   本仓库不含 Shizuku 本体；用户需自行安装 Shizuku（其许可为 Apache-2.0，且不得使用其名称、包名与图标）。
+
+2) Liquid Glass for Android（QWEA0/Liquid-Glass-Android，v2.0.11）— MIT License
+   本仓库不含其二进制 jar；构建时需自行获取并放入 物料/classes/。
+
+3) Google ML Kit（text-recognition，bundled 版）— Google ML Kit Terms of Service（非开源）
+   模型与 .so 属 Google 条款约束的 "related software"，不得逆向或提取再分发；本仓库通过
+   Gradle 依赖引入（bundled text-recognition 中文模型），未内置任何直接拷贝的二进制文件。
+
+4) AndroidX / AppCompat / Material Components / Kotlin stdlib — Apache-2.0 等，详见各自项目。
+
+--------------------------------------------------------------------------------
+Scope note for Air-Ko
+--------------------------------------------------------------------------------
+
+Air-Ko does NOT include the Shizuku API or Liquid Glass for Android. Device control is built
+entirely on the Android accessibility service, so the third-party obligations of Reticle's
+NOTICE items 1-2 do not apply to this application. Google ML Kit (item 3) is used as a normal
+Gradle dependency under its own terms; no ML Kit binaries are redistributed by this repository.

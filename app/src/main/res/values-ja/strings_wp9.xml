@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- WP9 おすすめストア -->
+    <string name="wp9_title_skill">おすすめのスキル</string>
+    <string name="wp9_title_prompt">おすすめのプロンプト</string>
+    <string name="wp9_title_quick_message">おすすめのクイックメッセージ</string>
+    <string name="wp9_title_mcp">おすすめの MCP サーバー</string>
+    <string name="wp9_fab_recommend">おすすめストア</string>
+    <string name="wp9_type_skill">スキル</string>
+    <string name="wp9_type_prompt">プロンプト</string>
+    <string name="wp9_type_quick_message">クイックメッセージ</string>
+    <string name="wp9_type_mcp">MCP</string>
+    <string name="wp9_runtime_npx">npx / Node.js</string>
+    <string name="wp9_runtime_uvx">uvx / Python</string>
+    <string name="wp9_runtime_docker">Docker</string>
+    <string name="wp9_runtime_remote">リモートサービス</string>
+    <string name="wp9_runtime_inline">埋め込みコンテンツ</string>
+    <string name="wp9_sort_default">既定</string>
+    <string name="wp9_sort_name_asc">名前 A→Z</string>
+    <string name="wp9_sort_name_desc">名前 Z→A</string>
+    <string name="wp9_sort_author">作者順</string>
+    <string name="wp9_sort_runtime">インストール方法</string>
+    <string name="wp9_copy">コピー</string>
+    <string name="wp9_clear">クリア</string>
+    <string name="wp9_run">実行</string>
+
+    <!-- 一覧ページ -->
+    <string name="wp9_list_search_placeholder">名前・説明・作者・タグを検索</string>
+    <string name="wp9_list_search_no_result">一致する項目がありません</string>
+    <string name="wp9_list_sort_label">並べ替え</string>
+    <string name="wp9_list_all_sources">すべてのソース</string>
+    <string name="wp9_list_refresh">更新</string>
+    <string name="wp9_list_manage_sources">ソースを管理</string>
+    <string name="wp9_list_loading">おすすめを読み込み中…</string>
+    <string name="wp9_list_empty">このカテゴリにはまだおすすめがありません</string>
+    <string name="wp9_list_empty_hint">「ソースを管理」からソースを追加または有効化できます</string>
+    <string name="wp9_list_failed">読み込みに失敗しました</string>
+    <string name="wp9_list_failed_hint">有効なソースをすべて読み込めませんでした。ネットワークとソース URL を確認して再試行してください。</string>
+    <string name="wp9_list_retry">再試行</string>
+    <string name="wp9_list_installed">インストール済み</string>
+    <string name="wp9_list_version_format">v%1$s</string>
+    <string name="wp9_list_cached_banner">キャッシュデータ：一部のソースを取得できなかったため、前回取得した内容を表示しています</string>
+    <string name="wp9_list_skipped_notice">不正な項目 %1$d 件をスキップしました</string>
+    <string name="wp9_list_source_error_format">%1$s：%2$s</string>
+
+    <!-- 詳細ページ -->
+    <string name="wp9_detail_not_found">項目が見つかりません：ソースから削除されたか、ソースが無効化された可能性があります</string>
+    <string name="wp9_detail_security">セキュリティ確認</string>
+    <string name="wp9_detail_source">ソース URL</string>
+    <string name="wp9_detail_sha256">SHA-256 チェックサム</string>
+    <string name="wp9_detail_no_sha">この項目には sha256 がありません。整合性を検証できません。</string>
+    <string name="wp9_detail_security_hint">インストールされる内容は AI の動作を変えます。ソース URL が信頼でき、チェックサムが配布元の公表値と一致することを確認してください。</string>
+    <string name="wp9_detail_deploy_doc">デプロイ手順</string>
+    <string name="wp9_detail_mcp_config">MCP 設定スニペット</string>
+    <string name="wp9_detail_open_install">インストール / デプロイ</string>
+    <string name="wp9_detail_reinstall">再インストール</string>
+
+    <!-- インストールページ -->
+    <string name="wp9_install_title">インストールとデプロイ</string>
+    <string name="wp9_install_run">ダウンロードしてインストール</string>
+    <string name="wp9_install_reinstall">再インストール</string>
+    <string name="wp9_install_running">%1$s をインストール中…</string>
+    <string name="wp9_install_success">インストール完了</string>
+    <string name="wp9_install_failed">インストール失敗</string>
+    <string name="wp9_install_steps">実行ログ</string>
+    <string name="wp9_install_retry">最初からやり直す</string>
+    <string name="wp9_confirm_title">セキュリティ確認</string>
+    <string name="wp9_confirm_message">「%1$s」をインストールします。\nソース：%2$s\nSHA-256：%3$s\n\n信頼できるソースであることを確認してから続行してください。</string>
+    <string name="wp9_confirm_accept">理解しました、続行</string>
+    <string name="wp9_mcp_oneclick">MCP 設定に書き込む</string>
+    <string name="wp9_mcp_config_title">MCP 設定</string>
+    <string name="wp9_mcp_local_warning">ローカル stdio サーバー（npx/uvx/docker）は設定に直接書き込めません。下記の手順でターミナルで起動し、公開された HTTP アドレスを MCP 設定に手動で追加してください。</string>
+    <string name="wp9_deploy_section">デプロイ</string>
+    <string name="wp9_deploy_runtime">%1$s の実行環境が必要</string>
+    <string name="wp9_deploy_runtime_hint">以下のコマンドは内蔵のワークスペースターミナルで実行されます。コピーして自分で実行することもできます。</string>
+    <string name="wp9_deploy_probe">実行環境を確認</string>
+    <string name="wp9_deploy_deps">依存関係</string>
+    <string name="wp9_deploy_run_command">起動コマンド</string>
+    <string name="wp9_deploy_run_in_terminal">ターミナルで実行</string>
+    <string name="wp9_deploy_doc">デプロイ手順</string>
+    <string name="wp9_deploy_terminal">内蔵ターミナル出力</string>
+    <string name="wp9_deploy_terminal_hint">コマンドは常駐のワークスペースターミナルで実行されます。詳しい調査が必要なときはチャットで AI に相談してください。</string>
+    <string name="wp9_deploy_terminal_unavailable">利用可能なワークスペースターミナルがありません。先に「ワークスペース」で Linux 環境をインストールしてから、デプロイコマンドを実行してください。</string>
+    <string name="wp9_deploy_go_workspaces">ワークスペースへ</string>
+    <string name="wp9_deploy_terminal_running">%1$s を実行中（%2$s）</string>
+    <string name="wp9_deploy_terminal_exit">終了コード：%1$d</string>
+    <string name="wp9_deploy_terminal_timeout">（コマンドがタイムアウトし、中断されました）</string>
+    <string name="wp9_deploy_terminal_failed">実行に失敗しました：%1$s</string>
+
+    <!-- ソース管理ページ -->
+    <string name="wp9_sources_title">おすすめソースの管理</string>
+    <string name="wp9_sources_add">ソースを追加</string>
+    <string name="wp9_sources_add_title">おすすめソースを追加</string>
+    <string name="wp9_sources_edit_title">おすすめソースを編集</string>
+    <string name="wp9_sources_name">名前</string>
+    <string name="wp9_sources_url">Index URL</string>
+    <string name="wp9_sources_url_hint">おすすめ index（JSON）の URL。http/https のみ対応。</string>
+    <string name="wp9_sources_save">保存</string>
+    <string name="wp9_sources_edit">編集</string>
+    <string name="wp9_sources_delete">削除</string>
+    <string name="wp9_sources_delete_title">ソースを削除</string>
+    <string name="wp9_sources_delete_confirm">おすすめソース「%1$s」を削除しますか？</string>
+    <string name="wp9_sources_move_up">上へ</string>
+    <string name="wp9_sources_move_down">下へ</string>
+    <string name="wp9_sources_builtin">組み込み</string>
+    <string name="wp9_sources_local">ローカル</string>
+    <string name="wp9_sources_local_name">組み込みサンプルコンテンツ</string>
+    <string name="wp9_sources_unknown">不明なソース</string>
+    <string name="wp9_sources_disabled">無効</string>
+    <string name="wp9_sources_drag_hint">長押しでドラッグして並べ替えできます。重複する項目がある場合、リストで先にあるソースが優先されます。</string>
+    <string name="wp9_sources_readonly_hint">組み込みソースは削除できません。ローカルソースは常に有効です。</string>
+    <string name="wp9_sources_reset">既定のソースに戻す</string>
+    <string name="wp9_sources_reset_confirm_title">既定のソースに戻しますか？</string>
+    <string name="wp9_sources_reset_confirm_message">出荷時のソース一覧（ローカルの組み込みソースを含む）に戻り、手動で追加したソースは削除されます。</string>
+    <string name="wp9_sources_reset_confirm_accept">復元</string>
+    <string name="wp9_sources_feedback_added">おすすめソースを追加しました</string>
+    <string name="wp9_sources_feedback_updated">変更を保存しました</string>
+    <string name="wp9_sources_feedback_removed">おすすめソースを削除しました</string>
+    <string name="wp9_sources_feedback_reset">既定のソースに戻しました</string>
+    <string name="wp9_sources_feedback_invalid_url">URL が無効です：http/https のみ、ホスト名が必要です</string>
+    <string name="wp9_sources_feedback_duplicate">この URL は既に存在します</string>
+    <string name="wp9_sources_feedback_not_found">対応するソースが見つかりません</string>
+</resources>

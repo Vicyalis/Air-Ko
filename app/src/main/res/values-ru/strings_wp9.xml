@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- WP9 магазин рекомендаций -->
+    <string name="wp9_title_skill">Рекомендуемые навыки</string>
+    <string name="wp9_title_prompt">Рекомендуемые промпты</string>
+    <string name="wp9_title_quick_message">Рекомендуемые быстрые сообщения</string>
+    <string name="wp9_title_mcp">Рекомендуемые MCP-серверы</string>
+    <string name="wp9_fab_recommend">Магазин рекомендаций</string>
+    <string name="wp9_type_skill">Навык</string>
+    <string name="wp9_type_prompt">Промпт</string>
+    <string name="wp9_type_quick_message">Быстрое сообщение</string>
+    <string name="wp9_type_mcp">MCP</string>
+    <string name="wp9_runtime_npx">npx / Node.js</string>
+    <string name="wp9_runtime_uvx">uvx / Python</string>
+    <string name="wp9_runtime_docker">Docker</string>
+    <string name="wp9_runtime_remote">Удалённая служба</string>
+    <string name="wp9_runtime_inline">Встроенное содержимое</string>
+    <string name="wp9_sort_default">По умолчанию</string>
+    <string name="wp9_sort_name_asc">Имя A→Z</string>
+    <string name="wp9_sort_name_desc">Имя Z→A</string>
+    <string name="wp9_sort_author">По автору</string>
+    <string name="wp9_sort_runtime">По способу установки</string>
+    <string name="wp9_copy">Копировать</string>
+    <string name="wp9_clear">Очистить</string>
+    <string name="wp9_run">Запустить</string>
+
+    <!-- Список -->
+    <string name="wp9_list_search_placeholder">Поиск по имени, описанию, автору или тегу</string>
+    <string name="wp9_list_search_no_result">Нет подходящих записей</string>
+    <string name="wp9_list_sort_label">Сортировка</string>
+    <string name="wp9_list_all_sources">Все источники</string>
+    <string name="wp9_list_refresh">Обновить</string>
+    <string name="wp9_list_manage_sources">Управление источниками</string>
+    <string name="wp9_list_loading">Загрузка рекомендаций…</string>
+    <string name="wp9_list_empty">В этой категории пока нет рекомендаций</string>
+    <string name="wp9_list_empty_hint">Добавьте или включите источники в разделе «Управление источниками»</string>
+    <string name="wp9_list_failed">Ошибка загрузки</string>
+    <string name="wp9_list_failed_hint">Не удалось загрузить ни один включённый источник. Проверьте сеть и адреса источников и повторите попытку.</string>
+    <string name="wp9_list_retry">Повторить</string>
+    <string name="wp9_list_installed">Установлено</string>
+    <string name="wp9_list_version_format">v%1$s</string>
+    <string name="wp9_list_cached_banner">Кэшированные данные: некоторые источники недоступны, показаны последние успешно загруженные данные</string>
+    <string name="wp9_list_skipped_notice">Пропущено некорректных записей: %1$d</string>
+    <string name="wp9_list_source_error_format">%1$s: %2$s</string>
+
+    <!-- Детали -->
+    <string name="wp9_detail_not_found">Запись не найдена: возможно, она удалена из источника или источник отключён</string>
+    <string name="wp9_detail_security">Проверка безопасности</string>
+    <string name="wp9_detail_source">Адрес источника</string>
+    <string name="wp9_detail_sha256">Контрольная сумма SHA-256</string>
+    <string name="wp9_detail_no_sha">Для этой записи не указана sha256, целостность проверить не удастся</string>
+    <string name="wp9_detail_security_hint">Установленное содержимое меняет поведение ИИ. Убедитесь, что адрес источника вызывает доверие, а контрольная сумма совпадает с опубликованной автором.</string>
+    <string name="wp9_detail_deploy_doc">Инструкция по развёртыванию</string>
+    <string name="wp9_detail_mcp_config">Фрагмент конфигурации MCP</string>
+    <string name="wp9_detail_open_install">Установить / Развернуть</string>
+    <string name="wp9_detail_reinstall">Переустановить</string>
+
+    <!-- Установка -->
+    <string name="wp9_install_title">Установка и развёртывание</string>
+    <string name="wp9_install_run">Скачать и установить</string>
+    <string name="wp9_install_reinstall">Переустановить</string>
+    <string name="wp9_install_running">Установка %1$s…</string>
+    <string name="wp9_install_success">Установлено</string>
+    <string name="wp9_install_failed">Ошибка установки</string>
+    <string name="wp9_install_steps">Журнал выполнения</string>
+    <string name="wp9_install_retry">Начать заново</string>
+    <string name="wp9_confirm_title">Подтверждение безопасности</string>
+    <string name="wp9_confirm_message">Устанавливается «%1$s».\nИсточник: %2$s\nSHA-256: %3$s\n\nПродолжайте, только если доверяете источнику.</string>
+    <string name="wp9_confirm_accept">Понятно, продолжить</string>
+    <string name="wp9_mcp_oneclick">Записать в настройки MCP</string>
+    <string name="wp9_mcp_config_title">Настройки MCP</string>
+    <string name="wp9_mcp_local_warning">Локальные stdio-серверы (npx/uvx/docker) нельзя записать в настройки напрямую. Запустите сервер в терминале по шагам ниже, затем вручную добавьте его HTTP-адрес в настройки MCP.</string>
+    <string name="wp9_deploy_section">Развёртывание</string>
+    <string name="wp9_deploy_runtime">Требуется среда выполнения %1$s</string>
+    <string name="wp9_deploy_runtime_hint">Команды ниже выполняются во встроенном терминале рабочего пространства. Их также можно скопировать и запустить самостоятельно.</string>
+    <string name="wp9_deploy_probe">Проверить среду</string>
+    <string name="wp9_deploy_deps">Зависимости</string>
+    <string name="wp9_deploy_run_command">Команда запуска</string>
+    <string name="wp9_deploy_run_in_terminal">Запустить в терминале</string>
+    <string name="wp9_deploy_doc">Инструкция по развёртыванию</string>
+    <string name="wp9_deploy_terminal">Вывод встроенного терминала</string>
+    <string name="wp9_deploy_terminal_hint">Команды выполняются в постоянном терминале рабочего пространства; для дальнейшей диагностики обратитесь к ИИ в чате.</string>
+    <string name="wp9_deploy_terminal_unavailable">Нет доступного терминала рабочего пространства. Сначала установите среду Linux на странице «Рабочие пространства», затем вернитесь и запустите команды развёртывания.</string>
+    <string name="wp9_deploy_go_workspaces">К рабочим пространствам</string>
+    <string name="wp9_deploy_terminal_running">Выполняется %1$s (%2$s)</string>
+    <string name="wp9_deploy_terminal_exit">Код выхода: %1$d</string>
+    <string name="wp9_deploy_terminal_timeout">(команда прервана по тайм-ауту)</string>
+    <string name="wp9_deploy_terminal_failed">Ошибка выполнения: %1$s</string>
+
+    <!-- Источники -->
+    <string name="wp9_sources_title">Управление источниками рекомендаций</string>
+    <string name="wp9_sources_add">Добавить источник</string>
+    <string name="wp9_sources_add_title">Добавить источник рекомендаций</string>
+    <string name="wp9_sources_edit_title">Изменить источник рекомендаций</string>
+    <string name="wp9_sources_name">Название</string>
+    <string name="wp9_sources_url">URL индекса</string>
+    <string name="wp9_sources_url_hint">Ссылка на индекс рекомендаций (JSON). Поддерживается только http/https.</string>
+    <string name="wp9_sources_save">Сохранить</string>
+    <string name="wp9_sources_edit">Изменить</string>
+    <string name="wp9_sources_delete">Удалить</string>
+    <string name="wp9_sources_delete_title">Удалить источник</string>
+    <string name="wp9_sources_delete_confirm">Удалить источник рекомендаций «%1$s»?</string>
+    <string name="wp9_sources_move_up">Вверх</string>
+    <string name="wp9_sources_move_down">Вниз</string>
+    <string name="wp9_sources_builtin">Встроенный</string>
+    <string name="wp9_sources_local">Локальный</string>
+    <string name="wp9_sources_local_name">Встроенный пример содержимого</string>
+    <string name="wp9_sources_unknown">Неизвестный источник</string>
+    <string name="wp9_sources_disabled">Отключён</string>
+    <string name="wp9_sources_drag_hint">Долгое нажатие — перетаскивание для сортировки. При дубликатах приоритет у источника, который выше в списке.</string>
+    <string name="wp9_sources_readonly_hint">Встроенные источники нельзя удалить; локальный источник всегда включён.</string>
+    <string name="wp9_sources_reset">Восстановить источники по умолчанию</string>
+    <string name="wp9_sources_reset_confirm_title">Восстановить источники по умолчанию?</string>
+    <string name="wp9_sources_reset_confirm_message">Будет восстановлен заводской список источников (включая локальный встроенный); добавленные вами источники будут удалены.</string>
+    <string name="wp9_sources_reset_confirm_accept">Восстановить</string>
+    <string name="wp9_sources_feedback_added">Источник рекомендаций добавлен</string>
+    <string name="wp9_sources_feedback_updated">Изменения сохранены</string>
+    <string name="wp9_sources_feedback_removed">Источник рекомендаций удалён</string>
+    <string name="wp9_sources_feedback_reset">Источники по умолчанию восстановлены</string>
+    <string name="wp9_sources_feedback_invalid_url">Неверный адрес: поддерживается только http/https с именем хоста</string>
+    <string name="wp9_sources_feedback_duplicate">Этот адрес уже существует</string>
+    <string name="wp9_sources_feedback_not_found">Источник не найден</string>
+</resources>

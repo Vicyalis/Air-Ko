@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- WP9 متجر التوصيات -->
+    <string name="wp9_title_skill">مهارات موصى بها</string>
+    <string name="wp9_title_prompt">مطالبات موصى بها</string>
+    <string name="wp9_title_quick_message">رسائل سريعة موصى بها</string>
+    <string name="wp9_title_mcp">خوادم MCP موصى بها</string>
+    <string name="wp9_fab_recommend">متجر التوصيات</string>
+    <string name="wp9_type_skill">مهارة</string>
+    <string name="wp9_type_prompt">مطالبة</string>
+    <string name="wp9_type_quick_message">رسالة سريعة</string>
+    <string name="wp9_type_mcp">MCP</string>
+    <string name="wp9_runtime_npx">npx / Node.js</string>
+    <string name="wp9_runtime_uvx">uvx / Python</string>
+    <string name="wp9_runtime_docker">Docker</string>
+    <string name="wp9_runtime_remote">خدمة عن بُعد</string>
+    <string name="wp9_runtime_inline">محتوى مضمّن</string>
+    <string name="wp9_sort_default">افتراضي</string>
+    <string name="wp9_sort_name_asc">الاسم A→Z</string>
+    <string name="wp9_sort_name_desc">الاسم Z→A</string>
+    <string name="wp9_sort_author">حسب المؤلف</string>
+    <string name="wp9_sort_runtime">حسب طريقة التثبيت</string>
+    <string name="wp9_copy">نسخ</string>
+    <string name="wp9_clear">مسح</string>
+    <string name="wp9_run">تشغيل</string>
+
+    <!-- صفحة القائمة -->
+    <string name="wp9_list_search_placeholder">ابحث في الاسم أو الوصف أو المؤلف أو الوسم</string>
+    <string name="wp9_list_search_no_result">لا توجد عناصر مطابقة</string>
+    <string name="wp9_list_sort_label">ترتيب</string>
+    <string name="wp9_list_all_sources">جميع المصادر</string>
+    <string name="wp9_list_refresh">تحديث</string>
+    <string name="wp9_list_manage_sources">إدارة المصادر</string>
+    <string name="wp9_list_loading">جارٍ تحميل التوصيات…</string>
+    <string name="wp9_list_empty">لا توجد توصيات في هذا التصنيف بعد</string>
+    <string name="wp9_list_empty_hint">يمكنك إضافة مصادر أو تمكينها من «إدارة المصادر»</string>
+    <string name="wp9_list_failed">فشل التحميل</string>
+    <string name="wp9_list_failed_hint">تعذّر تحميل جميع المصادر الممكّنة. تحقق من الشبكة وعناوين المصادر ثم أعد المحاولة.</string>
+    <string name="wp9_list_retry">إعادة المحاولة</string>
+    <string name="wp9_list_installed">مثبَّت</string>
+    <string name="wp9_list_version_format">v%1$s</string>
+    <string name="wp9_list_cached_banner">بيانات مخزّنة مؤقتًا: تعذّر جلب بعض المصادر، ويتم عرض آخر محتوى تم جلبه بنجاح</string>
+    <string name="wp9_list_skipped_notice">تم تخطي %1$d من العناصر غير الصالحة</string>
+    <string name="wp9_list_source_error_format">%1$s: %2$s</string>
+
+    <!-- صفحة التفاصيل -->
+    <string name="wp9_detail_not_found">العنصر غير موجود: ربما أُزيل من المصدر أو تم تعطيل المصدر</string>
+    <string name="wp9_detail_security">فحص الأمان</string>
+    <string name="wp9_detail_source">عنوان المصدر</string>
+    <string name="wp9_detail_sha256">بصمة SHA-256</string>
+    <string name="wp9_detail_no_sha">لا يوفّر هذا العنصر قيمة sha256، لذا لا يمكن التحقق من السلامة</string>
+    <string name="wp9_detail_security_hint">يمكن للمحتوى المثبَّت أن يغيّر سلوك الذكاء الاصطناعي. تأكد من أن عنوان المصدر موثوق وأن البصمة مطابقة لما نشره الموزّع.</string>
+    <string name="wp9_detail_deploy_doc">إرشادات النشر</string>
+    <string name="wp9_detail_mcp_config">مقتطف إعداد MCP</string>
+    <string name="wp9_detail_open_install">تثبيت / نشر</string>
+    <string name="wp9_detail_reinstall">إعادة التثبيت</string>
+
+    <!-- صفحة التثبيت -->
+    <string name="wp9_install_title">التثبيت والنشر</string>
+    <string name="wp9_install_run">تنزيل وتثبيت</string>
+    <string name="wp9_install_reinstall">إعادة التثبيت</string>
+    <string name="wp9_install_running">جارٍ تثبيت %1$s…</string>
+    <string name="wp9_install_success">تم التثبيت</string>
+    <string name="wp9_install_failed">فشل التثبيت</string>
+    <string name="wp9_install_steps">سجل التنفيذ</string>
+    <string name="wp9_install_retry">البدء من جديد</string>
+    <string name="wp9_confirm_title">تأكيد الأمان</string>
+    <string name="wp9_confirm_message">سيتم تثبيت \"%1$s\".\nالمصدر: %2$s\nSHA-256: %3$s\n\nتابع فقط إذا كنت تثق بهذا المصدر.</string>
+    <string name="wp9_confirm_accept">أفهم ذلك، تابع</string>
+    <string name="wp9_mcp_oneclick">الكتابة إلى إعدادات MCP</string>
+    <string name="wp9_mcp_config_title">إعدادات MCP</string>
+    <string name="wp9_mcp_local_warning">لا يمكن كتابة خوادم stdio المحلية (npx/uvx/docker) مباشرةً في الإعدادات. شغّلها في الطرفية وفق الخطوات أدناه، ثم أضف عنوان HTTP الذي توفّره إلى إعدادات MCP يدويًا.</string>
+    <string name="wp9_deploy_section">النشر</string>
+    <string name="wp9_deploy_runtime">يتطلب بيئة تشغيل %1$s</string>
+    <string name="wp9_deploy_runtime_hint">تُنفَّذ الأوامر أدناه في طرفية مساحة العمل المدمجة، ويمكنك نسخها وتشغيلها بنفسك أيضًا.</string>
+    <string name="wp9_deploy_probe">فحص بيئة التشغيل</string>
+    <string name="wp9_deploy_deps">المتطلبات</string>
+    <string name="wp9_deploy_run_command">أمر التشغيل</string>
+    <string name="wp9_deploy_run_in_terminal">تشغيل في الطرفية</string>
+    <string name="wp9_deploy_doc">إرشادات النشر</string>
+    <string name="wp9_deploy_terminal">مخرجات الطرفية المدمجة</string>
+    <string name="wp9_deploy_terminal_hint">تُنفَّذ الأوامر في طرفية مساحة العمل الدائمة؛ يمكنك الاستعانة بالذكاء الاصطناعي في الدردشة لمزيد من التشخيص.</string>
+    <string name="wp9_deploy_terminal_unavailable">لا تتوفر طرفية مساحة عمل. ثبّت بيئة Linux من صفحة «مساحات العمل» أولًا، ثم عد لتشغيل أوامر النشر.</string>
+    <string name="wp9_deploy_go_workspaces">فتح مساحات العمل</string>
+    <string name="wp9_deploy_terminal_running">جارٍ تنفيذ %1$s (%2$s)</string>
+    <string name="wp9_deploy_terminal_exit">رمز الخروج: %1$d</string>
+    <string name="wp9_deploy_terminal_timeout">(انتهت مهلة الأمر وتم إيقافه)</string>
+    <string name="wp9_deploy_terminal_failed">فشل التنفيذ: %1$s</string>
+
+    <!-- صفحة المصادر -->
+    <string name="wp9_sources_title">إدارة مصادر التوصيات</string>
+    <string name="wp9_sources_add">إضافة مصدر</string>
+    <string name="wp9_sources_add_title">إضافة مصدر توصيات</string>
+    <string name="wp9_sources_edit_title">تعديل مصدر التوصيات</string>
+    <string name="wp9_sources_name">الاسم</string>
+    <string name="wp9_sources_url">عنوان Index</string>
+    <string name="wp9_sources_url_hint">يشير إلى فهرس التوصيات (JSON). يُدعم http/https فقط.</string>
+    <string name="wp9_sources_save">حفظ</string>
+    <string name="wp9_sources_edit">تعديل</string>
+    <string name="wp9_sources_delete">حذف</string>
+    <string name="wp9_sources_delete_title">حذف المصدر</string>
+    <string name="wp9_sources_delete_confirm">هل تريد حذف مصدر التوصيات «%1$s»؟</string>
+    <string name="wp9_sources_move_up">لأعلى</string>
+    <string name="wp9_sources_move_down">لأسفل</string>
+    <string name="wp9_sources_builtin">مدمج</string>
+    <string name="wp9_sources_local">محلي</string>
+    <string name="wp9_sources_local_name">محتوى نموذجي مدمج</string>
+    <string name="wp9_sources_unknown">مصدر غير معروف</string>
+    <string name="wp9_sources_disabled">معطّل</string>
+    <string name="wp9_sources_drag_hint">اضغط مطوّلًا للسحب وإعادة الترتيب. عند تكرار العناصر، يُرجَّح المصدر الأعلى في القائمة.</string>
+    <string name="wp9_sources_readonly_hint">لا يمكن حذف المصادر المدمجة؛ والمصدر المحلي ممكّن دائمًا.</string>
+    <string name="wp9_sources_reset">استعادة المصادر الافتراضية</string>
+    <string name="wp9_sources_reset_confirm_title">استعادة المصادر الافتراضية؟</string>
+    <string name="wp9_sources_reset_confirm_message">سيتم استعادة قائمة المصادر الافتراضية (بما في ذلك المصدر المحلي المدمج)، وستُزال المصادر التي أضفتها.</string>
+    <string name="wp9_sources_reset_confirm_accept">استعادة</string>
+    <string name="wp9_sources_feedback_added">تمت إضافة مصدر التوصيات</string>
+    <string name="wp9_sources_feedback_updated">تم حفظ التغييرات</string>
+    <string name="wp9_sources_feedback_removed">تم حذف مصدر التوصيات</string>
+    <string name="wp9_sources_feedback_reset">تمت استعادة المصادر الافتراضية</string>
+    <string name="wp9_sources_feedback_invalid_url">عنوان غير صالح: يُدعم http/https فقط مع اسم مضيف</string>
+    <string name="wp9_sources_feedback_duplicate">هذا العنوان موجود بالفعل</string>
+    <string name="wp9_sources_feedback_not_found">لم يتم العثور على المصدر</string>
+</resources>

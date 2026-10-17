@@ -1,0 +1,193 @@
+{
+    "version":  1,
+    "items":  [
+                  {
+                      "id":  "changelog-writer",
+                      "type":  "skill",
+                      "name":  "更新日志撰写",
+                      "version":  "1.0.0",
+                      "author":  "Air-Ko",
+                      "description":  "把提交记录或对话整理成 Keep a Changelog 风格的更新日志",
+                      "tags":  [
+                                   "写作",
+                                   "changelog",
+                                   "release"
+                               ],
+                      "source_url":  "",
+                      "sha256":  "3e6fc84d8b31c4fdca7fd043de20390be8bb5fb0df33bed7ea1b1486613d4fa2",
+                      "install_kind":  "inline",
+                      "deps":  [
+
+                               ],
+                      "deploy_doc":  "内嵌技能，安装时不需要联网。\n安装后会出现在「技能」页面，按助手启用即可。",
+                      "sort":  10,
+                      "content":  "---\nname: changelog-writer\ndescription: 把一段提交记录或对话整理成 Keep a Changelog 风格的更新日志\n---\n\n# Changelog Writer\n\n## 何时使用\n用户给出一段 git 提交记录、PR 列表或对话摘要，希望整理成正式发布的更新日志时。\n\n## 步骤\n1. 判断每一条改动属于 `新增 / 修复 / 变更 / 移除 / 安全` 中的哪一类。\n2. 只保留对使用者有意义的条目，删掉内部重构、测试调整这类噪音。\n3. 每条写成「(做的事) + (带来什么影响)」，一行不超过 40 个字，不要出现文件路径。\n4. 按版本号分段输出 Markdown，未发布的版本放在最上面。\n\n## 输出格式\n```markdown\n## [版本号] - YYYY-MM-DD\n### 新增\n- ...\n### 修复\n- ...\n```\n\n## 注意\n- 不确定的地方不要编造，直接问用户。\n- 不要在日志里暴露内部接口名、密钥、内网地址。\n"
+                  },
+                  {
+                      "id":  "regex-explainer",
+                      "type":  "skill",
+                      "name":  "正则逐段拆解",
+                      "version":  "1.0.0",
+                      "author":  "Air-Ko",
+                      "description":  "逐段拆解正则表达式，给出可读解释、匹配示例与踩坑提醒",
+                      "tags":  [
+                                   "开发",
+                                   "正则"
+                               ],
+                      "source_url":  "",
+                      "sha256":  "c24fe6b4717f02c33314585d801f879c4d556e38c8646dd1e20c2b4ce32ed848",
+                      "install_kind":  "inline",
+                      "deps":  [
+
+                               ],
+                      "deploy_doc":  "内嵌技能，安装时不需要联网。\n安装后会出现在「技能」页面，按助手启用即可。",
+                      "sort":  11,
+                      "content":  "---\nname: regex-explainer\ndescription: 逐段拆解一个正则表达式并给出可读解释与测试用例\n---\n\n# Regex Explainer\n\n## 何时使用\n用户贴出一个正则表达式，想知道它到底匹配什么、为什么会误匹配时。\n\n## 输出结构\n1. **一句话结论**：这个正则整体在找什么。\n2. **逐段拆解**：用表格列出片段 / 含义 / 可能踩的坑。\n3. **匹配示例**：给 3 个能匹配的字符串和 3 个不能匹配的字符串。\n4. **改进建议**：能简化或加锚点的写法。\n\n## 注意\n- 先确认正则方言（PCRE / JavaScript / POSIX），不同方言的转义和断言不一样。\n- 涉及到回溯爆炸风险的写法（嵌套量词）必须显式警告。\n"
+                  },
+                  {
+                      "id":  "code-review",
+                      "type":  "prompt",
+                      "name":  "严谨代码审查",
+                      "version":  "1.0.0",
+                      "author":  "Air-Ko",
+                      "description":  "先给结论再列问题的代码审查提示词，明确要求「没问题就说没问题」",
+                      "tags":  [
+                                   "开发",
+                                   "审查"
+                               ],
+                      "source_url":  "",
+                      "sha256":  "c68f65796d49fa0e426e68e5c757204d7ff4ab3f71e6433c160ed32e1f6665d4",
+                      "install_kind":  "inline",
+                      "deps":  [
+
+                               ],
+                      "deploy_doc":  "内嵌提示词，安装后写入「提示词 → 模式注入」，在助手里勾选即可生效。",
+                      "sort":  20,
+                      "content":  "你是一名严谨的代码审查者。请审查我接下来给出的代码，并严格按下面的顺序输出：\n\n1. 结论：可以合入 / 需要修改 / 有严重问题（三选一，先给结论）。\n2. 严重问题：会导致崩溃、数据损坏、安全问题、并发竞态的点，每条给出触发条件。\n3. 正确性问题：逻辑边界、空值、异常路径、资源释放。\n4. 可读性建议：命名、结构、重复代码，最多 5 条，不要凑数。\n5. 如果代码没问题，直接说「没有发现问题」，不要编造问题。\n\n约束：\n- 不要重写整个文件，只给需要改动的片段，并说明为什么。\n- 不确定的地方要明说「不确定」，不要猜。\n"
+                  },
+                  {
+                      "id":  "writing-polish",
+                      "type":  "prompt",
+                      "name":  "中文润色",
+                      "version":  "1.0.0",
+                      "author":  "Air-Ko",
+                      "description":  "中英双语技术编辑风格的中文润色提示词，附改动清单",
+                      "tags":  [
+                                   "写作",
+                                   "润色"
+                               ],
+                      "source_url":  "",
+                      "sha256":  "b50d3f2129842846d4a921b0491ed5422f49add9550480e8f6e040c2f35c23d6",
+                      "install_kind":  "inline",
+                      "deps":  [
+
+                               ],
+                      "deploy_doc":  "内嵌提示词，安装后写入「提示词 → 模式注入」，在助手里勾选即可生效。",
+                      "sort":  21,
+                      "content":  "你是一名中英双语技术编辑。我会给你一段文本，请你：\n\n1. 先给出润色后的版本：保留原意，去掉口语化表达和重复，句子不超过 25 个字。\n2. 再列出你改动的每一处，格式为「原句 → 改后 → 原因」，最多 8 条。\n3. 如果原文本身已经很通顺，只回答「原文可用」，不要为了改而改。\n4. 专业术语保留英文原词，并在第一次出现时用括号给出中文解释。\n"
+                  },
+                  {
+                      "id":  "summarize-conversation",
+                      "type":  "quick_message",
+                      "name":  "总结这段对话",
+                      "version":  "1.0.0",
+                      "author":  "Air-Ko",
+                      "description":  "一键让模型总结当前对话并列出未解决的问题",
+                      "tags":  [
+                                   "效率"
+                               ],
+                      "source_url":  "",
+                      "sha256":  "8200e9e3a98bd5c3508074c05e9c94d49701f181e7bed3a1c093e5f458a78cd5",
+                      "install_kind":  "inline",
+                      "deps":  [
+
+                               ],
+                      "deploy_doc":  "内嵌快捷消息，安装后出现在「快捷消息」页面，可在助手里绑定。",
+                      "sort":  30,
+                      "content":  "请用 5 条以内的要点总结我们刚才的对话，并单独列出还没解决的问题。\n"
+                  },
+                  {
+                      "id":  "explain-code",
+                      "type":  "quick_message",
+                      "name":  "解释这段代码",
+                      "version":  "1.0.0",
+                      "author":  "Air-Ko",
+                      "description":  "贴代码前先发这段，让模型按「做什么/边界/风险」三段回答",
+                      "tags":  [
+                                   "开发"
+                               ],
+                      "source_url":  "",
+                      "sha256":  "3da556be3e17c2a2d3cf0dc5c956e7769e4269a98cb68f606385dc362212d6b7",
+                      "install_kind":  "inline",
+                      "deps":  [
+
+                               ],
+                      "deploy_doc":  "内嵌快捷消息，安装后出现在「快捷消息」页面，可在助手里绑定。",
+                      "sort":  31,
+                      "content":  "请按下面三段解释我接下来贴的代码，不要复述代码本身：\n1. 做什么：整体目标，3 句以内。\n2. 边界情况：输入异常、并发、资源释放、空值这些地方会发生什么。\n3. 风险：最可能出问题的位置以及触发条件。\n\n不确定的地方直接说「不确定」，不要猜。\n"
+                  },
+                  {
+                      "id":  "deepwiki",
+                      "type":  "mcp",
+                      "name":  "DeepWiki",
+                      "version":  "1.0.0",
+                      "author":  "Devin / Cognition",
+                      "description":  "把 GitHub 仓库变成可提问的文档知识库（远程 MCP 服务，无需本地部署）",
+                      "tags":  [
+                                   "远程",
+                                   "文档",
+                                   "GitHub"
+                               ],
+                      "source_url":  "https://mcp.deepwiki.com/mcp",
+                      "sha256":  "",
+                      "install_kind":  "remote",
+                      "deps":  [
+
+                               ],
+                      "deploy_doc":  "无需本地部署：DeepWiki 是公开的远程 MCP 服务，填入地址即可用。\n\n步骤：\n1. 点「一键写入 MCP 设置」。\n2. 回到「设置 → MCP」，确认列表里出现 DeepWiki 且为启用状态。\n3. 首次连接若报错，多为网络无法直连，请配置代理（设置 → 网络）。",
+                      "sort":  40
+                  },
+                  {
+                      "id":  "context7",
+                      "type":  "mcp",
+                      "name":  "Context7",
+                      "version":  "1.0.0",
+                      "author":  "Upstash",
+                      "description":  "查询第三方库的最新文档与代码示例（远程 MCP 服务，无需本地部署）",
+                      "tags":  [
+                                   "远程",
+                                   "文档"
+                               ],
+                      "source_url":  "https://mcp.context7.com/mcp",
+                      "sha256":  "",
+                      "install_kind":  "remote",
+                      "deps":  [
+
+                               ],
+                      "deploy_doc":  "无需本地部署：Context7 提供公开的远程 MCP 端点。\n\n步骤：\n1. 点「一键写入 MCP 设置」。\n2. 未带 API key 时按免费额度限流；遇到 429 就申请 key，并把地址改成\n   https://mcp.context7.com/mcp?apiKey=你的key\n3. 想改地址：设置 → MCP → 点进这个 server 编辑。",
+                      "sort":  41
+                  },
+                  {
+                      "id":  "server-everything",
+                      "type":  "mcp",
+                      "name":  "MCP 官方示例服务器",
+                      "version":  "1.0.0",
+                      "author":  "modelcontextprotocol",
+                      "description":  "MCP 官方的 everything server，包含工具/资源/提示词样例，适合验证客户端功能",
+                      "tags":  [
+                                   "本地",
+                                   "npx",
+                                   "示例"
+                               ],
+                      "source_url":  "https://www.npmjs.com/package/@modelcontextprotocol/server-everything",
+                      "sha256":  "",
+                      "install_kind":  "npx",
+                      "deps":  [
+                                   "apt update \u0026\u0026 apt install -y nodejs npm"
+                               ],
+                      "deploy_doc":  "这是本地 stdio 类型的 MCP server，需要先在本机把它跑起来。\n\n所需运行时：Node.js 18+（npx 会按需下载包，首次运行要能访问 npm registry）。\n\n步骤：\n1. 打开「工作区 → 终端」，确认 rootfs 已安装（没有就先去工作区页安装）。\n2. 点本页「检测运行时」确认 node/npx 可用；缺依赖时点「在终端里安装依赖」。\n3. 本 App 的 MCP 客户端只支持远程 HTTP 传输，所以要用 stdio→HTTP 代理再挂上，例如：\n   npx -y mcp-proxy --port 8080 -- npx -y @modelcontextprotocol/server-everything\n4. 然后回到「设置 → MCP」手动添加地址 http://127.0.0.1:8080/mcp 即可。\n\n说明：第三步的命令只是示例，任何能把 stdio 暴露成 HTTP 的代理都可以。",
+                      "sort":  42,
+                      "run_command":  "npx -y @modelcontextprotocol/server-everything"
+                  }
+              ]
+}

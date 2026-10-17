@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- WP9 推薦商店 -->
+    <string name="wp9_title_skill">推薦技能</string>
+    <string name="wp9_title_prompt">推薦提示詞</string>
+    <string name="wp9_title_quick_message">推薦快捷訊息</string>
+    <string name="wp9_title_mcp">推薦 MCP 伺服器</string>
+    <string name="wp9_fab_recommend">推薦商店</string>
+    <string name="wp9_type_skill">技能</string>
+    <string name="wp9_type_prompt">提示詞</string>
+    <string name="wp9_type_quick_message">快捷訊息</string>
+    <string name="wp9_type_mcp">MCP</string>
+    <string name="wp9_runtime_npx">npx / Node.js</string>
+    <string name="wp9_runtime_uvx">uvx / Python</string>
+    <string name="wp9_runtime_docker">Docker</string>
+    <string name="wp9_runtime_remote">遠端服務</string>
+    <string name="wp9_runtime_inline">內嵌內容</string>
+    <string name="wp9_sort_default">預設</string>
+    <string name="wp9_sort_name_asc">名稱 A→Z</string>
+    <string name="wp9_sort_name_desc">名稱 Z→A</string>
+    <string name="wp9_sort_author">依作者</string>
+    <string name="wp9_sort_runtime">依安裝方式</string>
+    <string name="wp9_copy">複製</string>
+    <string name="wp9_clear">清除</string>
+    <string name="wp9_run">執行</string>
+
+    <!-- 清單頁 -->
+    <string name="wp9_list_search_placeholder">搜尋名稱、說明、作者或標籤</string>
+    <string name="wp9_list_search_no_result">沒有符合的項目</string>
+    <string name="wp9_list_sort_label">排序</string>
+    <string name="wp9_list_all_sources">所有來源</string>
+    <string name="wp9_list_refresh">重新整理</string>
+    <string name="wp9_list_manage_sources">管理推薦來源</string>
+    <string name="wp9_list_loading">正在載入推薦內容…</string>
+    <string name="wp9_list_empty">這個分類目前沒有可推薦的項目</string>
+    <string name="wp9_list_empty_hint">可以到「管理推薦來源」新增或啟用更多來源</string>
+    <string name="wp9_list_failed">載入失敗</string>
+    <string name="wp9_list_failed_hint">所有已啟用的來源都無法載入。請檢查網路與來源網址後重試。</string>
+    <string name="wp9_list_retry">重試</string>
+    <string name="wp9_list_installed">已安裝</string>
+    <string name="wp9_list_version_format">v%1$s</string>
+    <string name="wp9_list_cached_banner">快取資料：部分來源取得失敗，目前顯示上次成功取得的內容</string>
+    <string name="wp9_list_skipped_notice">有 %1$d 個項目不合規，已略過</string>
+    <string name="wp9_list_source_error_format">%1$s：%2$s</string>
+
+    <!-- 詳情頁 -->
+    <string name="wp9_detail_not_found">項目不存在：可能已從來源移除，或對應來源已停用</string>
+    <string name="wp9_detail_security">安全檢查</string>
+    <string name="wp9_detail_source">來源網址</string>
+    <string name="wp9_detail_sha256">SHA-256 校驗值</string>
+    <string name="wp9_detail_no_sha">此項目未提供 sha256，安裝時無法驗證完整性</string>
+    <string name="wp9_detail_security_hint">安裝內容會改變 AI 的行為。請確認來源網址可信，且校驗值與發布方公布的一致。</string>
+    <string name="wp9_detail_deploy_doc">部署說明</string>
+    <string name="wp9_detail_mcp_config">MCP 設定片段</string>
+    <string name="wp9_detail_open_install">安裝 / 部署</string>
+    <string name="wp9_detail_reinstall">重新安裝</string>
+
+    <!-- 安裝頁 -->
+    <string name="wp9_install_title">安裝與部署</string>
+    <string name="wp9_install_run">下載並安裝</string>
+    <string name="wp9_install_reinstall">重新安裝</string>
+    <string name="wp9_install_running">正在安裝 %1$s…</string>
+    <string name="wp9_install_success">安裝成功</string>
+    <string name="wp9_install_failed">安裝失敗</string>
+    <string name="wp9_install_steps">執行紀錄</string>
+    <string name="wp9_install_retry">重來</string>
+    <string name="wp9_confirm_title">安全確認</string>
+    <string name="wp9_confirm_message">即將安裝「%1$s」。\n來源：%2$s\nSHA-256：%3$s\n\n確認來源可信後再繼續。</string>
+    <string name="wp9_confirm_accept">我已知曉，繼續</string>
+    <string name="wp9_mcp_oneclick">寫入 MCP 設定</string>
+    <string name="wp9_mcp_config_title">MCP 設定</string>
+    <string name="wp9_mcp_local_warning">本地 stdio 類伺服器（npx/uvx/docker）無法直接寫入設定：請依下方步驟先在終端機中執行，再把其提供的 HTTP 位址手動加入 MCP 設定。</string>
+    <string name="wp9_deploy_section">部署</string>
+    <string name="wp9_deploy_runtime">需要 %1$s 執行環境</string>
+    <string name="wp9_deploy_runtime_hint">下方指令會在工作區的內建終端機中執行，也可以複製後自行執行。</string>
+    <string name="wp9_deploy_probe">檢測執行環境</string>
+    <string name="wp9_deploy_deps">相依套件</string>
+    <string name="wp9_deploy_run_command">啟動指令</string>
+    <string name="wp9_deploy_run_in_terminal">在終端機中執行</string>
+    <string name="wp9_deploy_doc">部署說明</string>
+    <string name="wp9_deploy_terminal">內建終端機輸出</string>
+    <string name="wp9_deploy_terminal_hint">指令會在工作區常駐終端機中執行；需要進一步排查時可在聊天中請 AI 協助。</string>
+    <string name="wp9_deploy_terminal_unavailable">沒有可用的工作區終端機。請先到「工作區」安裝 Linux 環境，再回來執行部署指令。</string>
+    <string name="wp9_deploy_go_workspaces">前往工作區</string>
+    <string name="wp9_deploy_terminal_running">正在執行 %1$s（%2$s）</string>
+    <string name="wp9_deploy_terminal_exit">結束代碼：%1$d</string>
+    <string name="wp9_deploy_terminal_timeout">（指令逾時，已中斷）</string>
+    <string name="wp9_deploy_terminal_failed">執行失敗：%1$s</string>
+
+    <!-- 來源管理頁 -->
+    <string name="wp9_sources_title">推薦來源管理</string>
+    <string name="wp9_sources_add">新增來源</string>
+    <string name="wp9_sources_add_title">新增推薦來源</string>
+    <string name="wp9_sources_edit_title">編輯推薦來源</string>
+    <string name="wp9_sources_name">名稱</string>
+    <string name="wp9_sources_url">Index 網址</string>
+    <string name="wp9_sources_url_hint">指向推薦 index（JSON）。僅支援 http/https。</string>
+    <string name="wp9_sources_save">儲存</string>
+    <string name="wp9_sources_edit">編輯</string>
+    <string name="wp9_sources_delete">刪除</string>
+    <string name="wp9_sources_delete_title">刪除推薦來源</string>
+    <string name="wp9_sources_delete_confirm">刪除推薦來源「%1$s」？</string>
+    <string name="wp9_sources_move_up">上移</string>
+    <string name="wp9_sources_move_down">下移</string>
+    <string name="wp9_sources_builtin">內建</string>
+    <string name="wp9_sources_local">本機</string>
+    <string name="wp9_sources_local_name">內建範例內容</string>
+    <string name="wp9_sources_unknown">未知來源</string>
+    <string name="wp9_sources_disabled">已停用</string>
+    <string name="wp9_sources_drag_hint">長按可拖曳排序；出現重複項目時，清單中較前面的來源優先。</string>
+    <string name="wp9_sources_readonly_hint">內建來源無法刪除；本機來源一律啟用。</string>
+    <string name="wp9_sources_reset">恢復預設來源</string>
+    <string name="wp9_sources_reset_confirm_title">恢復預設來源？</string>
+    <string name="wp9_sources_reset_confirm_message">將還原為出廠來源清單（含本機內建來源），你手動新增的來源會被移除。</string>
+    <string name="wp9_sources_reset_confirm_accept">還原</string>
+    <string name="wp9_sources_feedback_added">已新增推薦來源</string>
+    <string name="wp9_sources_feedback_updated">已儲存修改</string>
+    <string name="wp9_sources_feedback_removed">已刪除推薦來源</string>
+    <string name="wp9_sources_feedback_reset">已恢復預設來源</string>
+    <string name="wp9_sources_feedback_invalid_url">網址無效：僅支援 http/https 且需包含主機名稱</string>
+    <string name="wp9_sources_feedback_duplicate">此網址已存在</string>
+    <string name="wp9_sources_feedback_not_found">找不到對應的來源</string>
+</resources>
