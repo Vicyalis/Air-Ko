@@ -127,7 +127,10 @@ fun RecommendInstallPage(
         }
 
         val needsRuntime = current.installKind.needsRuntime
-        val remoteMcp = current.type == RecommendType.MCP && current.resolvedRemoteUrl.isNotBlank()
+        // 可直接写地址的 remote，或需要下载配置 payload 的 MCP，都能一键写入设置；
+        // 本地 npx/uvx/docker 仍然只能走部署讲解。
+        val installableMcp = current.type == RecommendType.MCP &&
+            (current.mcpDirectUrl.isNotBlank() || current.hasMcpConfigPayload)
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -204,7 +207,7 @@ fun RecommendInstallPage(
                     Icon(HugeIcons.Download01, contentDescription = null, modifier = Modifier.size(18.dp))
                     Text(
                         text = when {
-                            remoteMcp -> stringResource(R.string.wp9_mcp_oneclick)
+                            installableMcp -> stringResource(R.string.wp9_mcp_oneclick)
                             installed -> stringResource(R.string.wp9_install_reinstall)
                             else -> stringResource(R.string.wp9_install_run)
                         },
@@ -234,7 +237,7 @@ fun RecommendInstallPage(
                 }
             }
 
-            if (current.type == RecommendType.MCP && !remoteMcp) {
+            if (current.type == RecommendType.MCP && !installableMcp) {
                 item(key = "mcp_local_warning") {
                     WarningCard(text = stringResource(R.string.wp9_mcp_local_warning))
                 }

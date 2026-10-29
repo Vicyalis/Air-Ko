@@ -16,8 +16,9 @@
 #   rikkahub_provider_description  - describes the real upstream free AI service that
 #                                    ships as a built-in provider; renaming it would
 #                                    turn an accurate description into a false one.
-#   RikkaHubAPI / RikkaHubSearchService / the `me.rerere.rikkahub` package and
-#   Gradle `namespace` - internal identifiers, not user-visible.
+#   the `me.rerere.rikkahub` package, the Gradle `namespace`, and serialized type
+#   names (e.g. @SerialName("rikkahub")) - internal identifiers; renaming them would
+#   break saved-settings compatibility and has no user-visible effect.
 #
 # Safe to re-run: every substitution is idempotent ('RikkaHub' is gone after the
 # first run, and the share-text head contains no brand name again).

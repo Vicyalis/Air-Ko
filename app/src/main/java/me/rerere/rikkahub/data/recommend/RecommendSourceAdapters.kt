@@ -17,9 +17,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /** 适配结果：转换成功给出本协议 JSON；[NotApplicable] 表示按原生协议解析。 */
@@ -60,8 +58,8 @@ private fun convertClaudeMarketplace(source: RecommendSource, raw: String): Sour
     val items = buildJsonArray {
         plugins.forEach { pluginElement ->
             val plugin = pluginElement as? JsonObject ?: return@forEach
-            val pluginName = plugin["name"]?.jsonPrimitive?.contentOrNull.orEmpty().trim()
-            val description = plugin["description"]?.jsonPrimitive?.contentOrNull.orEmpty().trim()
+            val pluginName = (plugin["name"] as? JsonPrimitive)?.contentOrNull.orEmpty().trim()
+            val description = (plugin["description"] as? JsonPrimitive)?.contentOrNull.orEmpty().trim()
             val skills = plugin["skills"] as? JsonArray ?: return@forEach
             skills.forEach { skillElement ->
                 val rawPath = (skillElement as? JsonPrimitive)?.contentOrNull.orEmpty().trim()
@@ -117,22 +115,30 @@ private fun convertMcpRegistry(source: RecommendSource, raw: String): SourceConv
 
     val items = buildJsonArray {
         servers.forEach { element ->
-            val server = (element as? JsonObject)?.get("server")?.jsonObject ?: return@forEach
-            val fullName = server["name"]?.jsonPrimitive?.contentOrNull.orEmpty().trim()
+            val server = ((element as? JsonObject)?.get("server") as? JsonObject) ?: return@forEach
+            val fullName = (server["name"] as? JsonPrimitive)?.contentOrNull.orEmpty().trim()
             if (fullName.isEmpty()) return@forEach
-            val title = server["title"]?.jsonPrimitive?.contentOrNull.orEmpty().trim()
-            val description = server["description"]?.jsonPrimitive?.contentOrNull.orEmpty().trim()
+            val title = (server["title"] as? JsonPrimitive)?.contentOrNull.orEmpty().trim()
+            val description = (server["description"] as? JsonPrimitive)?.contentOrNull.orEmpty().trim()
             val id = "mcp-" + fullName.lowercase().replace(Regex("[^a-z0-9._-]+"), "-").trim('-')
             val displayName = title.ifBlank { fullName }
 
-            val remoteUrl = (server["remotes"] as? JsonArray)
-                ?.firstNotNullOfOrNull { remote ->
-                    (remote as? JsonObject)?.get("url")?.jsonPrimitive?.contentOrNull
+            // 注册表的 remotes 带传输类型与可选 headers；必须原样带到 index，
+            // 否则 SSE 服务会被当成 Streamable HTTP，带鉴权的服务会丢掉请求头。
+            val remote = (server["remotes"] as? JsonArray)
+                ?.filterIsInstance<JsonObject>()
+                ?.firstOrNull { remote ->
+                    val url = (remote["url"] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
+                    (url.startsWith("http://") || url.startsWith("https://")) &&
+                        !url.contains('{') && !url.contains('}')
                 }
-                ?.trim()
-                ?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+            val remoteUrl = (remote?.get("url") as? JsonPrimitive)?.contentOrNull?.trim()
+            val remoteType = (remote?.get("type") as? JsonPrimitive)?.contentOrNull?.trim()
+            val remoteHeaders = remote?.get("headers") as? JsonArray
+            val remoteIsSse = remoteType?.contains("sse", ignoreCase = true) == true
 
-            if (remoteUrl != null) {
+            val resolvedRemoteUrl = remoteUrl?.takeIf { it.isNotBlank() }
+            if (resolvedRemoteUrl != null) {
                 add(
                     buildJsonObject {
                         put("id", id)
@@ -140,19 +146,41 @@ private fun convertMcpRegistry(source: RecommendSource, raw: String): SourceConv
                         put("name", displayName)
                         put("author", "MCP Registry")
                         put("description", description.ifBlank { fullName })
-                        put("source_url", remoteUrl)
-                        put("remote_url", remoteUrl)
+                        put("source_url", resolvedRemoteUrl)
+                        put("remote_url", resolvedRemoteUrl)
                         put("install_kind", "remote")
-                        put("deploy_doc", "远程 MCP 服务：安装时直接把地址写进「MCP 服务器」，不需要在设备上跑命令。")
+                        put("mcp_transport", if (remoteIsSse) "sse" else "streamable_http")
+                        if (remoteHeaders != null && remoteHeaders.isNotEmpty()) {
+                            put(
+                                "mcp_headers",
+                                buildJsonObject {
+                                    remoteHeaders.forEach { header ->
+                                        val headerObj = header as? JsonObject ?: return@forEach
+                                        val headerName = (headerObj["name"] as? JsonPrimitive)
+                                            ?.contentOrNull?.trim().orEmpty()
+                                        val headerValue = (headerObj["value"] as? JsonPrimitive)?.contentOrNull
+                                            ?: (headerObj["default"] as? JsonPrimitive)?.contentOrNull
+                                        if (headerName.isNotEmpty() && !headerValue.isNullOrBlank()) {
+                                            put(headerName, headerValue)
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                        put(
+                            "deploy_doc",
+                            "远程 MCP 服务（${if (remoteIsSse) "SSE" else "Streamable HTTP"}）：" +
+                                "安装时直接把地址写进「MCP 服务器」，不需要在设备上跑命令。"
+                        )
                         put("sort", 200)
                     }
                 )
                 return@forEach
             }
 
-            val pkg = (server["packages"] as? JsonArray)?.firstOrNull()?.jsonObject ?: return@forEach
-            val registryType = pkg["registryType"]?.jsonPrimitive?.contentOrNull.orEmpty().lowercase()
-            val identifier = pkg["identifier"]?.jsonPrimitive?.contentOrNull.orEmpty().trim()
+            val pkg = (server["packages"] as? JsonArray)?.firstOrNull() as? JsonObject ?: return@forEach
+            val registryType = (pkg["registryType"] as? JsonPrimitive)?.contentOrNull.orEmpty().lowercase()
+            val identifier = (pkg["identifier"] as? JsonPrimitive)?.contentOrNull.orEmpty().trim()
             if (identifier.isEmpty()) return@forEach
             val (kind, command) = when (registryType) {
                 "npm" -> "npx" to "npx -y $identifier"

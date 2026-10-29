@@ -44,6 +44,8 @@ data class RecommendFeedState(
     val sourceResults: List<RecommendSourceResult> = emptyList(),
     val cachedSourceIds: Set<String> = emptySet(),
     val skippedCount: Int = 0,
+    /** 被跳过的条目及原因：列表页直接展示，避免「条目不见了」却没有任何解释 */
+    val skippedEntries: List<SkippedRecommendEntry> = emptyList(),
 ) {
     /** 有没有任何源走了缓存：UI 需要显著标注「缓存数据」 */
     val hasCachedData: Boolean get() = cachedSourceIds.isNotEmpty()
@@ -95,13 +97,13 @@ class RecommendIndexRepository(
         val entries = mutableListOf<RecommendEntry>()
         val results = mutableListOf<RecommendSourceResult>()
         val cachedSourceIds = mutableSetOf<String>()
-        var skippedTotal = 0
+        val skippedEntries = mutableListOf<SkippedRecommendEntry>()
 
         for (source in sources) {
             when (val loaded = loadSource(source, cache)) {
                 is SourceLoad.Success -> {
                     entries += loaded.entries
-                    skippedTotal += loaded.skipped
+                    skippedEntries += loaded.skipped
                     results += RecommendSourceResult(
                         sourceId = source.id,
                         sourceName = source.name,
@@ -109,7 +111,7 @@ class RecommendIndexRepository(
                         fromCache = loaded.fromCache,
                         fetchedAt = loaded.fetchedAt,
                         itemCount = loaded.entries.size,
-                        skipped = loaded.skipped,
+                        skipped = loaded.skipped.size,
                     )
                     when {
                         loaded.fromCache -> cachedSourceIds += source.id
@@ -138,14 +140,15 @@ class RecommendIndexRepository(
             entries = entries.distinctBy { it.identity },
             sourceResults = results,
             cachedSourceIds = cachedSourceIds,
-            skippedCount = skippedTotal,
+            skippedCount = skippedEntries.size,
+            skippedEntries = skippedEntries.distinctBy { "${it.id}\u0000${it.reason}" },
         )
     }
 
     private sealed interface SourceLoad {
         data class Success(
             val entries: List<RecommendEntry>,
-            val skipped: Int,
+            val skipped: List<SkippedRecommendEntry>,
             val fromCache: Boolean,
             val fetchedAt: Long,
             val body: String?,
@@ -173,7 +176,7 @@ class RecommendIndexRepository(
                         return when (parsed) {
                             is RecommendIndexParseResult.Success -> SourceLoad.Success(
                                 entries = parsed.entries,
-                                skipped = parsed.skipped.size,
+                                skipped = parsed.skipped,
                                 fromCache = true,
                                 fetchedAt = cached.fetchedAt,
                                 body = null,
@@ -190,7 +193,7 @@ class RecommendIndexRepository(
         return when (val parsed = parseEntries(raw, source)) {
             is RecommendIndexParseResult.Success -> SourceLoad.Success(
                 entries = parsed.entries,
-                skipped = parsed.skipped.size,
+                skipped = parsed.skipped,
                 fromCache = false,
                 fetchedAt = System.currentTimeMillis(),
                 body = raw,
@@ -207,7 +210,13 @@ class RecommendIndexRepository(
             SourceConvertResult.NotApplicable -> raw
             is SourceConvertResult.Failed -> return RecommendIndexParseResult.Invalid(converted.message)
         }
-        return parseRecommendIndex(payload, originId = source.id, originName = name)
+        return parseRecommendIndex(
+            text = payload,
+            originId = source.id,
+            originName = name,
+            // 远端 index 里的相对 source_url 按它自己的地址解析；本地 asset 没有 base
+            baseUrl = source.url.takeIf { !source.local },
+        )
     }
 
     private fun readLocalIndex(): String =
@@ -297,10 +306,10 @@ private suspend fun Call.awaitBody(): String = suspendCancellableCoroutine { con
                 response.use {
                     try {
                         if (!response.isSuccessful) {
-                            throw IOException("HTTP ${response.code}")
+                            throw IOException("HTTP ${response.code} ${response.message}".trim())
                         }
                         val body = response.body?.string().orEmpty()
-                        if (body.isBlank()) throw IOException("响应内容为空")
+                        if (body.isBlank()) throw IOException("响应内容为空（0 字节）")
                         if (continuation.isActive) continuation.resume(body)
                     } catch (e: Exception) {
                         if (continuation.isActive) continuation.resumeWithException(e)

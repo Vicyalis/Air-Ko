@@ -67,6 +67,12 @@
   <string name="wp5_desktop_scheme_summary_jupyter">JupyterLab notebooks for /workspace.</string>
   <string name="wp5_desktop_scheme_summary_none">No desktop; the workspace offers the terminal only.</string>
   <string name="wp5_desktop_scheme_summary_novnc">A lightweight Linux desktop (Fluxbox) in the browser via noVNC.</string>
+  <string name="wp5_desktop_scheme_kde">KDE Plasma (X11 + VNC)</string>
+  <string name="wp5_desktop_scheme_summary_kde">Full KDE Plasma desktop streamed over VNC; large download (~1.4 GB), works on Ubuntu/Debian/Arch/Fedora</string>
+  <string name="wp5_desktop_scheme_cinnamon">Cinnamon (X11 + VNC)</string>
+  <string name="wp5_desktop_scheme_summary_cinnamon">Cinnamon desktop streamed over VNC; medium download (~700 MB), works on Ubuntu/Debian/Arch/Fedora</string>
+  <string name="wp5_desktop_scheme_hyprland">Hyprland (Wayland + VNC)</string>
+  <string name="wp5_desktop_scheme_summary_hyprland">Tiling Wayland compositor with wayvnc; small download, needs a recent distro (Arch/Fedora/Ubuntu 25.04+)</string>
   <string name="wp5_desktop_status_installed">Installed</string>
   <string name="wp5_desktop_status_not_configured">Not configured</string>
   <string name="wp5_desktop_status_not_installed">Not installed</string>

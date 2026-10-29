@@ -8,7 +8,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.ai.mcp.McpCommonOptions
+import me.rerere.rikkahub.data.ai.mcp.McpOAuthState
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
+import me.rerere.rikkahub.data.ai.mcp.isValidMcpServerName
+import me.rerere.rikkahub.data.ai.mcp.sanitizeMcpServerName
+import me.rerere.rikkahub.data.ai.mcp.serverUrl
+import me.rerere.rikkahub.data.ai.mcp.uniqueMcpServerName
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.model.PromptInjection
 import me.rerere.rikkahub.data.model.QuickMessage
@@ -54,10 +59,17 @@ class RecommendInstaller(
     suspend fun install(entry: RecommendEntry): RecommendInstallResult = withContext(Dispatchers.IO) {
         val steps = mutableListOf<String>()
         try {
+            // MCP 不能先下载 payload：remote 条目的 source_url 就是服务端点，
+            // 对端点发 GET 会得到 405/406（DeepWiki/Context7 都是这样），
+            // 以前正是在这里失败，导致所有远程 MCP 条目都装不上。
+            if (entry.type == RecommendType.MCP) {
+                return@withContext installMcp(entry, steps)
+            }
+
             val payload = resolvePayload(entry, steps)
                 ?: return@withContext RecommendInstallResult(
                     success = false,
-                    message = "这个条目没有可安装的内容（既没有内嵌内容也没有下载地址）",
+                    message = "这个条目没有可安装的内容（content 和 source_url 都为空）",
                     steps = steps,
                 )
 
@@ -78,7 +90,7 @@ class RecommendInstaller(
                 RecommendType.SKILL -> installSkill(entry, payload, steps)
                 RecommendType.PROMPT -> installPrompt(entry, payload, steps)
                 RecommendType.QUICK_MESSAGE -> installQuickMessage(entry, payload, steps)
-                RecommendType.MCP -> installMcp(entry, steps)
+                RecommendType.MCP -> error("MCP 已在上面单独处理")
             }
         } catch (e: Exception) {
             Log.w(TAG, "install: ${entry.identity} 安装失败", e)
@@ -130,7 +142,7 @@ class RecommendInstaller(
         val files: Map<String, ByteArray>
         val skillName: String
 
-        if (isZip(payload)) {
+        if (isZipPayload(payload)) {
             steps += "识别为压缩包，开始解压"
             when (val result = extractSkillArchive(payload)) {
                 is SkillArchiveResult.Failure -> return RecommendInstallResult(false, result.message, steps)
@@ -235,50 +247,205 @@ class RecommendInstaller(
     }
 
     /**
-     * MCP：只有远程类条目能一键写入（本 App 的 MCP 客户端目前只支持 SSE / Streamable HTTP）。
+     * MCP 安装：支持三种来源。
+     * 1. `content` 内嵌配置 JSON；
+     * 2. `remote_url` / `source_url` 直接是 MCP 端点（不能再下载，端点只接受 POST/SSE）；
+     * 3. `source_url` 指向 `.json`/`.zip` 配置 payload，下载后解析。
      *
-     * npx/uvx/docker 类的 server 得先在设备上跑起来（部署讲解里有命令），本地 stdio 没法直接吃进设置，
-     * 所以这里如实拒绝，而不是写一条永远连不上的配置进去。
+     * 解析结果会保留 sse / streamable_http、headers 与 oauth，而不是一律写成
+     * Streamable HTTP 空请求头 —— 后者会让需要鉴权的服务装进去也连不上。
      */
     private suspend fun installMcp(
         entry: RecommendEntry,
         steps: MutableList<String>,
     ): RecommendInstallResult {
-        val url = entry.resolvedRemoteUrl
-        if (url.isBlank()) {
+        // 本地 stdio 类：本 App 的 MCP 客户端只支持 SSE / Streamable HTTP。
+        // 直接拒绝，不要下载任何东西（npm 页面、镜像地址都不是 MCP 配置）。
+        if (entry.installKind.needsRuntime) {
+            val command = runtimeCommand(entry)
             return RecommendInstallResult(
                 success = false,
-                message = "这是本地 ${entry.installKind.wire} 类型的 MCP server，需要先在终端里按部署讲解跑起来，" +
-                    "再用它暴露出的 HTTP 地址手动添加",
+                message = buildString {
+                    append("这是本地 ${entry.installKind.wire} 类型的 MCP server，本 App 只支持远程 HTTP 连接。")
+                    if (command.isNotBlank()) append("请先在工作区终端运行 `$command`，")
+                    append("再用它暴露的 HTTP 地址手动添加。")
+                },
                 steps = steps,
             )
         }
-        if (!isHttpUrl(url)) {
-            return RecommendInstallResult(false, "MCP 地址不是 http/https：$url", steps)
+
+        val draft = when {
+            // 有明确的端点地址时优先用它：`remote_url`/remote 条目的 `source_url` 就是服务地址，
+            // 不能下载（MCP 端点只接受 POST/SSE，GET 会 405/406）。
+            entry.mcpDirectUrl.isNotBlank() -> {
+                if (entry.hasChecksum) {
+                    steps += "远程 MCP 端点不做 sha256 校验（index 的 sha256 只适用于下载内容）"
+                }
+                McpServerDraft(
+                    transport = entry.mcpTransport,
+                    url = entry.mcpDirectUrl,
+                    headers = entry.mcpHeaders,
+                    oauth = entry.mcpOauth,
+                    name = entry.name,
+                )
+            }
+
+            entry.content.isNotBlank() -> {
+                val bytes = entry.content.toByteArray(Charsets.UTF_8)
+                steps += "使用 index 内嵌的 MCP 配置（${bytes.size} 字节）"
+                if (!verifyPayload(entry, bytes, steps)) {
+                    return RecommendInstallResult(
+                        success = false,
+                        message = "sha256 校验失败，已拒绝安装（内嵌 MCP 配置与 index 声明不一致）",
+                        steps = steps,
+                    )
+                }
+                when (val parsed = parseMcpConfigJson(entry.content, preferredName = entry.name)) {
+                    is McpConfigParseResult.Success -> parsed.draft
+                    is McpConfigParseResult.Failure -> return RecommendInstallResult(
+                        success = false,
+                        message = "解析内嵌 MCP 配置失败：${parsed.message}",
+                        steps = steps,
+                    )
+                }
+            }
+
+            entry.mcpConfigUrl.isNotBlank() -> {
+                steps += "下载 MCP 配置：${entry.mcpConfigUrl}"
+                val payload = download(entry.mcpConfigUrl)
+                steps += "已下载 ${payload.size} 字节"
+                if (!verifyPayload(entry, payload, steps)) {
+                    return RecommendInstallResult(
+                        success = false,
+                        message = "sha256 校验失败，已拒绝安装（MCP 配置与 index 声明不一致）",
+                        steps = steps,
+                    )
+                }
+                when (val parsed = parseMcpConfigPayload(payload, preferredName = entry.name)) {
+                    is McpConfigParseResult.Success -> parsed.draft
+                    is McpConfigParseResult.Failure -> return RecommendInstallResult(
+                        success = false,
+                        message = "解析 MCP 配置失败：${parsed.message}",
+                        steps = steps,
+                    )
+                }
+            }
+
+            else -> return RecommendInstallResult(
+                success = false,
+                message = "MCP 条目缺少可安装的内容（url、source_url 和 content 都为空）",
+                steps = steps,
+            )
         }
 
-        val config = McpServerConfig.StreamableHTTPServer(
-            commonOptions = McpCommonOptions(name = entry.name),
-            url = url,
+        if (!isHttpUrl(draft.url)) {
+            return RecommendInstallResult(false, "MCP 地址不是 http/https：${draft.url}", steps)
+        }
+
+        // MCP 名称会拼进工具名，只允许字母数字；展示名里的空格/中文在这里统一转换。
+        val requestedName = entry.name.ifBlank { draft.name }
+        val baseName = sanitizeMcpServerName(requestedName, fallback = entry.id)
+        if (baseName != requestedName.trim()) {
+            steps += "MCP 名称只允许字母和数字，已规范化为「$baseName」"
+        }
+
+        val currentServers = settingsStore.settingsFlow.value.mcpServers
+        val existingByUrl = currentServers.firstOrNull { it.serverUrl == draft.url }
+        val existingByName = currentServers.firstOrNull { it.commonOptions.name == baseName }
+        val existing = existingByUrl ?: existingByName
+        val finalName = when {
+            existingByUrl != null && isValidMcpServerName(existingByUrl.commonOptions.name) ->
+                existingByUrl.commonOptions.name
+
+            existingByName != null -> baseName
+            else -> uniqueMcpServerName(baseName, currentServers.map { it.commonOptions.name }.toSet())
+        }
+        if (existingByUrl == null && finalName != baseName) {
+            steps += "名称「$baseName」已被占用，改用「$finalName」"
+        }
+
+        val existingOptions = existing?.commonOptions
+        val commonOptions = McpCommonOptions(
+            enable = existingOptions?.enable ?: true,
+            name = finalName,
+            headers = draft.headers.ifEmpty { existingOptions?.headers.orEmpty() },
+            tools = existingOptions?.tools.orEmpty(),
+            oauth = mergeMcpOAuth(draft.oauth, existingOptions?.oauth),
         )
+        val config = when (draft.transport) {
+            McpTransport.SSE -> McpServerConfig.SseTransportServer(
+                commonOptions = commonOptions,
+                url = draft.url,
+            )
+
+            McpTransport.STREAMABLE_HTTP -> McpServerConfig.StreamableHTTPServer(
+                commonOptions = commonOptions,
+                url = draft.url,
+            )
+        }
+        val finalConfig = existing?.let { config.clone(id = it.id) } ?: config
+
         settingsStore.update { settings ->
-            val existing = settings.mcpServers.firstOrNull { it.commonOptions.name == entry.name }
             settings.copy(
                 mcpServers = if (existing != null) {
-                    settings.mcpServers.map {
-                        if (it.id == existing.id) config.clone(id = existing.id) else it
-                    }
+                    settings.mcpServers.map { if (it.id == existing.id) finalConfig else it }
                 } else {
-                    settings.mcpServers + config
+                    settings.mcpServers + finalConfig
                 }
             )
         }
-        steps += "已写入 MCP 设置：${entry.name} → $url"
+
+        steps += "MCP 传输：${draft.transport.displayName}"
+        steps += "MCP 地址：${draft.url}"
+        if (commonOptions.headers.isNotEmpty()) {
+            steps += "请求头：${commonOptions.headers.size} 个"
+        }
+        commonOptions.oauth?.takeIf { it.enabled }?.let { oauth ->
+            val scope = oauth.scope?.takeIf { it.isNotBlank() }?.let { "（scope=$it）" }.orEmpty()
+            steps += "OAuth：已启用$scope"
+        }
+        if (commonOptions.headers.any { it.second.contains('{') && it.second.contains('}') }) {
+            steps += "警告：请求头里有未替换的变量（如 {API_KEY}），请在 MCP 设置页补全"
+        }
+        steps += if (commonOptions.enable) {
+            "已写入 MCP 设置并启用：$finalName → ${draft.url}"
+        } else {
+            "已写入 MCP 设置（保留原有的禁用状态）：$finalName → ${draft.url}"
+        }
+
         return RecommendInstallResult(
             success = true,
-            message = "MCP server「${entry.name}」已写入设置",
+            message = if (existing != null) {
+                "MCP server「$finalName」已更新"
+            } else {
+                "MCP server「$finalName」已写入设置并启用"
+            },
             steps = steps,
             identity = entry.identity,
+        )
+    }
+
+    /**
+     * 重新安装时不要把已有的 OAuth 令牌冲掉：index 里通常只有 `oauth.enabled/scope`，
+     * 真正的 access/refresh token 是用户在本机授权后保存的。
+     */
+    private fun mergeMcpOAuth(
+        incoming: McpOAuthState?,
+        existing: McpOAuthState?,
+    ): McpOAuthState? {
+        if (incoming == null) return existing
+        if (existing == null || !incoming.enabled) return incoming
+        return incoming.copy(
+            clientId = incoming.clientId ?: existing.clientId,
+            clientSecret = incoming.clientSecret ?: existing.clientSecret,
+            authorizationEndpoint = incoming.authorizationEndpoint ?: existing.authorizationEndpoint,
+            tokenEndpoint = incoming.tokenEndpoint ?: existing.tokenEndpoint,
+            registrationEndpoint = incoming.registrationEndpoint ?: existing.registrationEndpoint,
+            redirectUri = incoming.redirectUri ?: existing.redirectUri,
+            scope = incoming.scope ?: existing.scope,
+            accessToken = incoming.accessToken ?: existing.accessToken,
+            refreshToken = incoming.refreshToken ?: existing.refreshToken,
+            expiresAt = incoming.expiresAt.takeIf { it > 0L } ?: existing.expiresAt,
         )
     }
 
@@ -287,13 +454,13 @@ class RecommendInstaller(
             .url(url)
             .header("Accept", "*/*")
             .build()
-        return client.newCall(request).awaitBytes()
+        return try {
+            client.newCall(request).awaitBytes()
+        } catch (e: IOException) {
+            // 把地址和 HTTP 状态一起带给 UI，用户才知道是哪个源、哪种失败
+            throw IOException("下载 $url 失败：${e.message ?: "网络错误"}", e)
+        }
     }
-
-    private fun isZip(bytes: ByteArray): Boolean =
-        bytes.size >= 4 &&
-            bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte() &&
-            (bytes[2] == 0x03.toByte() || bytes[2] == 0x05.toByte() || bytes[2] == 0x07.toByte())
 
     private companion object {
         const val TAG = "RecommendInstaller"
@@ -321,8 +488,11 @@ private suspend fun Call.awaitBytes(): ByteArray = suspendCancellableCoroutine {
             override fun onResponse(call: Call, response: Response) {
                 response.use {
                     try {
-                        if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-                        val body = response.body ?: throw IOException("响应为空")
+                        if (!response.isSuccessful) {
+                            throw IOException("HTTP ${response.code} ${response.message}".trim())
+                        }
+                        val body = response.body ?: throw IOException("响应没有 body")
+                        if (body.contentLength() == 0L) throw IOException("响应为空（0 字节）")
                         if (body.contentLength() > RecommendInstallerLimits.MAX_PAYLOAD_BYTES) {
                             throw IOException("文件超过 ${RecommendInstallerLimits.MAX_PAYLOAD_BYTES / 1024 / 1024} MB")
                         }
@@ -340,6 +510,7 @@ private suspend fun Call.awaitBytes(): ByteArray = suspendCancellableCoroutine {
                                 output.write(buffer, 0, read)
                             }
                         }
+                        if (output.size() == 0) throw IOException("响应为空（0 字节）")
                         if (continuation.isActive) continuation.resume(output.toByteArray())
                     } catch (e: Exception) {
                         if (continuation.isActive) continuation.resumeWithException(e)

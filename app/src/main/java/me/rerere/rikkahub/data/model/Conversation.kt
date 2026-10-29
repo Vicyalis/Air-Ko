@@ -36,6 +36,8 @@ data class Conversation(
     val workspaceCwd: String? = null,
     // 所属文件夹（助手内分组），null 表示未归入任何文件夹
     val folderId: Uuid? = null,
+    /** 临时对话：不计入历史列表，退出后删除 */
+    val temporary: Boolean = false,
     @Transient
     val newConversation: Boolean = false
 ) {

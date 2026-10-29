@@ -6,6 +6,7 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.ai.mcp.isValidMcpServerName
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.skills.SkillManager
@@ -46,11 +47,17 @@ class ChatToolFactory(
         if (shouldUseExternalWebSearch(assistant, model)) {
             addAll(createSearchTools(settings))
         }
-        addAll(localTools.getTools(assistant.localTools))
+        addAll(localTools.getTools(assistant.localTools, assistant.localToolsAutoApprove))
         if (assistant.enableRecentChatsReference) {
             addAll(createConversationTools(conversationRepository, assistant.id))
         }
-        addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd))
+        addAll(
+            createWorkspaceToolsIfReady(
+                assistant.workspaceId?.toString(),
+                workspaceCwd,
+                assistant.localToolsAutoApprove,
+            )
+        )
         if (assistant.enabledSkills.isNotEmpty()) {
             addAll(
                 createSkillTools(
@@ -64,7 +71,7 @@ class ChatToolFactory(
         val invalidNames = mcpTools
             .map { it.second }
             .distinct()
-            .filter { name -> name.isEmpty() || !name.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' } }
+            .filter { name -> !isValidMcpServerName(name) }
         if (invalidNames.isNotEmpty()) {
             throw InvalidMcpServerNamesException(invalidNames)
         }
@@ -81,7 +88,11 @@ class ChatToolFactory(
         }
     }
 
-    private suspend fun createWorkspaceToolsIfReady(workspaceId: String?, cwd: String?): List<Tool> {
+    private suspend fun createWorkspaceToolsIfReady(
+        workspaceId: String?,
+        cwd: String?,
+        autoApprove: Boolean,
+    ): List<Tool> {
         if (workspaceId.isNullOrBlank()) return emptyList()
         val workspace = workspaceRepository.getById(workspaceId) ?: return emptyList()
         if (workspace.shellStatus != WorkspaceShellStatus.READY.name) {
@@ -91,6 +102,6 @@ class ChatToolFactory(
             )
             return emptyList()
         }
-        return createWorkspaceTools(workspaceId, workspaceRepository, cwd)
+        return createWorkspaceTools(workspaceId, workspaceRepository, cwd, autoApprove)
     }
 }

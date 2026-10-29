@@ -309,7 +309,7 @@ private fun RecommendProviderItem(
 ) {
     Surface(
         shape = shape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = CustomColors.listItemColors.containerColor,
     ) {
         Row(
             modifier = Modifier

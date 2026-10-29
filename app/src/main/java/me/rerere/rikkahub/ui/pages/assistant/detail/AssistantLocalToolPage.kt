@@ -10,13 +10,20 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -28,11 +35,13 @@ import me.rerere.ui.toast.ToastType
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Calendar03
 import me.rerere.hugeicons.stroke.ChartLineData01
+import me.rerere.hugeicons.stroke.CheckList
 import me.rerere.hugeicons.stroke.ClipboardPaste
 import me.rerere.hugeicons.stroke.Clock01
 import me.rerere.hugeicons.stroke.CursorPointer01
 import me.rerere.hugeicons.stroke.JavaScript
 import me.rerere.hugeicons.stroke.MessageQuestion
+import me.rerere.hugeicons.stroke.Shield01
 import me.rerere.hugeicons.stroke.SmartPhone01
 import me.rerere.hugeicons.stroke.VolumeHigh
 import me.rerere.rikkahub.R
@@ -43,6 +52,7 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
 import me.rerere.rikkahub.ui.components.ui.CardGroupScope
+import me.rerere.rikkahub.ui.components.ui.CardGroupValue
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionInfo
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
@@ -97,6 +107,7 @@ private fun AssistantLocalToolContent(
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
+    var showAllowAllDialog by remember { mutableStateOf(false) }
     val permissionRequiredText =
         stringResource(R.string.assistant_page_local_tools_screen_time_permission_required)
     val deviceControlPermissionRequiredText =
@@ -183,6 +194,71 @@ private fun AssistantLocalToolContent(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        CardGroup(title = { Text(stringResource(R.string.tool_approval_title)) }) {
+            switchItem(
+                checked = assistant.localToolsAutoApprove,
+                onCheckedChange = {
+                    onUpdate(assistant.copy(localToolsAutoApprove = it))
+                },
+                leadingContent = {
+                    CardGroupIcon(
+                        icon = HugeIcons.Shield01,
+                        containerColor = if (assistant.localToolsAutoApprove) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        },
+                        contentColor = if (assistant.localToolsAutoApprove) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                },
+                headlineContent = {
+                    Text(
+                        stringResource(
+                            if (assistant.localToolsAutoApprove) {
+                                R.string.tool_approval_switch_on_title
+                            } else {
+                                R.string.tool_approval_switch_off_title
+                            }
+                        )
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        stringResource(
+                            if (assistant.localToolsAutoApprove) {
+                                R.string.tool_approval_switch_on_desc
+                            } else {
+                                R.string.tool_approval_switch_off_desc
+                            }
+                        )
+                    )
+                },
+            )
+            item(
+                leadingContent = { CardGroupIcon(HugeIcons.CheckList) },
+                headlineContent = { Text(stringResource(R.string.tool_approval_allow_all)) },
+                supportingContent = { Text(stringResource(R.string.tool_approval_allow_all_desc)) },
+                trailingContent = {
+                    if (assistant.localToolsAutoApprove) {
+                        CardGroupValue(stringResource(R.string.tool_approval_status_allowed))
+                    } else {
+                        FilledTonalButton(onClick = { showAllowAllDialog = true }) {
+                            Text(stringResource(R.string.tool_approval_allow_all_action))
+                        }
+                    }
+                },
+            )
+        }
+        Text(
+            text = stringResource(R.string.tool_approval_device_control_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
         CardGroup {
             toolItem(
                 option = LocalToolOption.JavascriptEngine,
@@ -239,5 +315,29 @@ private fun AssistantLocalToolContent(
                 description = R.string.assistant_page_local_tools_device_control_desc,
             )
         }
+    }
+
+    if (showAllowAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showAllowAllDialog = false },
+            icon = { Icon(HugeIcons.Shield01, contentDescription = null) },
+            title = { Text(stringResource(R.string.tool_approval_allow_all_dialog_title)) },
+            text = { Text(stringResource(R.string.tool_approval_allow_all_dialog_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showAllowAllDialog = false
+                        onUpdate(assistant.copy(localToolsAutoApprove = true))
+                    }
+                ) {
+                    Text(stringResource(R.string.tool_approval_allow_all_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAllowAllDialog = false }) {
+                    Text(stringResource(R.string.assistant_page_cancel))
+                }
+            },
+        )
     }
 }

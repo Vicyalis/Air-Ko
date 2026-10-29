@@ -236,38 +236,6 @@ fun ImportExportTab(
                 },
             )
         }
-
-        CardGroup(
-            title = { Text(stringResource(R.string.backup_page_import_from_other_app)) },
-        ) {
-            item(
-                onClick = if (!isRestoring) {
-                    {
-                        importType = "chatbox"
-                        openDocumentLauncher.launch(arrayOf("application/zip"))
-                    }
-                } else null,
-                headlineContent = { Text(stringResource(R.string.backup_page_import_from_chatbox)) },
-                supportingContent = { Text(stringResource(R.string.backup_page_import_chatbox_desc)) },
-                leadingContent = {
-                    BackupActionIcon(HugeIcons.FileImport, loading = isRestoring && importType == "chatbox")
-                },
-            )
-
-            item(
-                onClick = if (!isRestoring) {
-                    {
-                        importType = "cherry"
-                        openDocumentLauncher.launch(arrayOf("application/zip"))
-                    }
-                } else null,
-                headlineContent = { Text(stringResource(R.string.backup_page_import_from_cherry_studio)) },
-                supportingContent = { Text(stringResource(R.string.backup_page_import_cherry_studio_desc)) },
-                leadingContent = {
-                    BackupActionIcon(HugeIcons.FileImport, loading = isRestoring && importType == "cherry")
-                },
-            )
-        }
     }
 
     if (showImportConfirmDialog) {

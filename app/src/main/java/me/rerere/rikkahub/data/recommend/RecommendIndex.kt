@@ -11,7 +11,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
+import me.rerere.rikkahub.data.ai.mcp.McpOAuthState
 import me.rerere.rikkahub.data.skills.SkillFrontmatterParser
 
 /**
@@ -114,6 +116,10 @@ data class RecommendEntry(
     val runCommand: String,
     val originId: String,
     val originName: String,
+    // 以下字段只对 MCP 条目有意义；index 里可以显式写 mcp_transport / mcp_headers / mcp_oauth
+    val mcpTransport: McpTransport = McpTransport.STREAMABLE_HTTP,
+    val mcpHeaders: List<Pair<String, String>> = emptyList(),
+    val mcpOauth: McpOAuthState? = null,
 ) {
     /** 跨源唯一的条目标识，用于「已确认/已安装」记录与导航参数 */
     val identity: String get() = "${type.wire}:$id"
@@ -131,6 +137,38 @@ data class RecommendEntry(
             installKind == InstallKind.REMOTE -> sourceUrl
             else -> ""
         }
+
+    /**
+     * 可以直接写进设置的 MCP 端点。
+     *
+     * `source_url` 指向 `.json`/`.zip` 时它是「配置 payload」而不是端点，
+     * 必须下载解析后再写设置，不能把配置文件的地址当成 MCP 地址。
+     */
+    val mcpDirectUrl: String
+        get() = when {
+            installKind.needsRuntime -> ""
+            remoteUrl.isNotBlank() -> remoteUrl
+            sourceUrl.isNotBlank() && !isMcpConfigPayloadUrl(sourceUrl) &&
+                (installKind == InstallKind.REMOTE ||
+                    (installKind == InstallKind.INLINE && content.isBlank())) -> sourceUrl
+
+            else -> ""
+        }
+
+    /** 需要下载并解析的 MCP 配置地址（内嵌 content 为空时才有值）。 */
+    val mcpConfigUrl: String
+        get() = when {
+            installKind.needsRuntime -> ""
+            content.isNotBlank() -> ""
+            sourceUrl.isNotBlank() && isMcpConfigPayloadUrl(sourceUrl) -> sourceUrl
+            else -> ""
+        }
+
+    /** 这个 MCP 条目是否需要先拿到一份配置 payload 才能安装。 */
+    val hasMcpConfigPayload: Boolean
+        get() = type == RecommendType.MCP &&
+            !installKind.needsRuntime &&
+            (content.isNotBlank() || mcpConfigUrl.isNotBlank())
 }
 
 /** 被跳过的条目，[reason] 会在 UI 上以「N 条被跳过」的形式展示。 */
@@ -169,6 +207,15 @@ internal data class RecommendEntryDto(
     val content: String = "",
     @SerialName("remote_url") val remoteUrl: String = "",
     @SerialName("run_command") val runCommand: String = "",
+    // MCP 专用字段。除了本协议推荐的 mcp_* 写法，也接受更直观的 url/headers/oauth/transport，
+    // 方便直接把 Claude Desktop 风格的配置片段放进 index。
+    val url: JsonElement? = null,
+    val headers: JsonElement? = null,
+    val oauth: JsonElement? = null,
+    val transport: JsonElement? = null,
+    @SerialName("mcp_transport") val mcpTransport: String = "",
+    @SerialName("mcp_headers") val mcpHeaders: JsonElement? = null,
+    @SerialName("mcp_oauth") val mcpOauth: JsonElement? = null,
 )
 
 /**
@@ -195,8 +242,11 @@ fun parseRecommendIndex(
     text: String,
     originId: String,
     originName: String,
+    baseUrl: String? = null,
 ): RecommendIndexParseResult {
-    val root = runCatching { RecommendIndexJson.parseToJsonElement(text) }.getOrNull()
+    val root = runCatching {
+        RecommendIndexJson.parseToJsonElement(text.trim().removePrefix("\uFEFF"))
+    }.getOrNull()
         ?: return RecommendIndexParseResult.Invalid("index 不是合法的 JSON")
 
     val array = extractEntryArray(root)
@@ -224,7 +274,7 @@ fun parseRecommendIndex(
             return@forEach
         }
 
-        when (val result = validateEntryDto(dto)) {
+        when (val result = validateEntryDto(dto, baseUrl)) {
             is EntryValidation.Valid -> entries += result.entry.copy(
                 originId = originId,
                 originName = originName,
@@ -295,7 +345,7 @@ private sealed interface EntryValidation {
     data class Invalid(val reason: String) : EntryValidation
 }
 
-private fun validateEntryDto(dto: RecommendEntryDto): EntryValidation {
+private fun validateEntryDto(dto: RecommendEntryDto, baseUrl: String?): EntryValidation {
     val id = dto.id.trim()
     if (id.isEmpty()) return EntryValidation.Invalid("缺少 id")
 
@@ -309,22 +359,69 @@ private fun validateEntryDto(dto: RecommendEntryDto): EntryValidation {
             ?: return EntryValidation.Invalid("install_kind 未知：${dto.installKind}")
     }
 
-    val sourceUrl = dto.sourceUrl.trim()
+    // 相对地址按 index 自身地址解析，避免 `./configs/mcp.json` 这类条目被误判成非法
+    val sourceUrl = resolveRelativeHttpUrl(dto.sourceUrl, baseUrl)
     if (sourceUrl.isNotEmpty() && !isHttpUrl(sourceUrl)) {
         return EntryValidation.Invalid("source_url 不是 http/https 地址")
     }
 
-    val remoteUrl = dto.remoteUrl.trim()
+    val urlAlias = (dto.url as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
+    val rawRemoteUrl = dto.remoteUrl.ifBlank { if (type == RecommendType.MCP) urlAlias else "" }
+    val remoteUrl = resolveRelativeHttpUrl(rawRemoteUrl, baseUrl)
     if (remoteUrl.isNotEmpty() && !isHttpUrl(remoteUrl)) {
         return EntryValidation.Invalid("remote_url 不是 http/https 地址")
     }
 
-    // 没给内嵌内容又没给下载地址，装不出东西来
-    if (installKind == InstallKind.INLINE && dto.content.isBlank() && sourceUrl.isEmpty()) {
+    // MCP 专用扩展字段；非 MCP 条目忽略，避免旧 index 里同名字段造成误伤
+    val transportAlias = (dto.transport as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
+    val rawTransport = if (type == RecommendType.MCP) {
+        dto.mcpTransport.ifBlank { transportAlias }
+    } else {
+        ""
+    }
+    val mcpTransport = if (rawTransport.isNotBlank()) {
+        McpTransport.fromWire(rawTransport)
+            ?: return EntryValidation.Invalid("mcp_transport 未知：$rawTransport")
+    } else {
+        McpTransport.STREAMABLE_HTTP
+    }
+    val mcpHeaders = if (type == RecommendType.MCP) {
+        when (val parsed = parseMcpHeadersElement(dto.mcpHeaders ?: dto.headers)) {
+            McpHeadersParseResult.Absent -> emptyList()
+            is McpHeadersParseResult.Parsed -> parsed.headers
+            is McpHeadersParseResult.Invalid -> return EntryValidation.Invalid(parsed.message)
+        }
+    } else {
+        emptyList()
+    }
+    val mcpOauth = if (type == RecommendType.MCP) {
+        when (val parsed = parseMcpOAuthElement(dto.mcpOauth ?: dto.oauth)) {
+            McpOAuthParseResult.Absent -> null
+            is McpOAuthParseResult.Parsed -> parsed.state
+            is McpOAuthParseResult.Invalid -> return EntryValidation.Invalid(parsed.message)
+        }
+    } else {
+        null
+    }
+
+    // 没给内嵌内容又没给下载/服务地址，装不出东西来
+    val hasMcpRemoteUrl = type == RecommendType.MCP && remoteUrl.isNotEmpty()
+    if (installKind == InstallKind.INLINE && dto.content.isBlank() &&
+        sourceUrl.isEmpty() && !hasMcpRemoteUrl
+    ) {
         return EntryValidation.Invalid("inline 条目既没有 content 也没有 source_url")
     }
-    if (installKind == InstallKind.REMOTE && sourceUrl.isEmpty() && remoteUrl.isEmpty()) {
-        return EntryValidation.Invalid("remote 条目缺少地址")
+    val hasMcpInlineContent = type == RecommendType.MCP && dto.content.isNotBlank()
+    if (installKind == InstallKind.REMOTE && sourceUrl.isEmpty() &&
+        remoteUrl.isEmpty() && !hasMcpInlineContent
+    ) {
+        return EntryValidation.Invalid(
+            if (type == RecommendType.MCP) {
+                "remote 条目缺少地址（mcp 需要 url/source_url/content）"
+            } else {
+                "remote 条目缺少地址"
+            }
+        )
     }
 
     val sha256 = normalizeSha256(dto.sha256)
@@ -354,8 +451,33 @@ private fun validateEntryDto(dto: RecommendEntryDto): EntryValidation {
             runCommand = dto.runCommand.trim(),
             originId = "",
             originName = "",
+            mcpTransport = mcpTransport,
+            mcpHeaders = mcpHeaders,
+            mcpOauth = mcpOauth,
         )
     )
+}
+
+/**
+ * 相对地址按 index 自己的地址解析（GitHub 上常见的 `./configs/mcp.json`）。
+ *
+ * 没有 baseUrl、或者地址本身带了别的 scheme（ftp://、file://）时原样返回，
+ * 交给 [isHttpUrl] 拒绝；协议相对地址 `//host/x` 也不解析，避免绕过来源校验。
+ */
+internal fun resolveRelativeHttpUrl(raw: String, baseUrl: String?): String {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return ""
+    if (isHttpUrl(trimmed)) return trimmed
+    if (baseUrl.isNullOrBlank() || !isHttpUrl(baseUrl)) return trimmed
+    if (trimmed.startsWith("//") || trimmed.contains("://")) return trimmed
+    return runCatching { java.net.URI(baseUrl).resolve(trimmed).toString() }.getOrDefault(trimmed)
+}
+
+/** `.json`/`.zip`/`.mcpb` 这类地址是配置 payload，不是 MCP 端点，安装时必须下载解析。 */
+fun isMcpConfigPayloadUrl(url: String): Boolean {
+    val path = url.trim().substringBefore('?').substringBefore('#').lowercase()
+    return path.endsWith(".json") || path.endsWith(".jsonc") ||
+        path.endsWith(".zip") || path.endsWith(".mcpb")
 }
 
 /** 只接受 http/https，其它 scheme（file://、content://、data:）一律当非法，避免被引导去本地路径。 */

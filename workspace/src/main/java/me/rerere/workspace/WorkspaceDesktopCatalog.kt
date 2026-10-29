@@ -15,6 +15,9 @@ enum class WorkspaceDesktop(val id: String) {
     JUPYTER("jupyter"),
     GNOME("gnome"),
     NIRI("niri"),
+    KDE("kde"),
+    CINNAMON("cinnamon"),
+    HYPRLAND("hyprland"),
     CUSTOM("custom"),
     ;
 
@@ -107,7 +110,7 @@ object WorkspaceDesktopCatalog {
     const val PORT_NOVNC = 6080
     const val PORT_JUPYTER = 8888
 
-    /** GNOME / Niri / noVNC 都用 VNC 出画面, 网页入口 (noVNC + websockify) 共用这一个端口。 */
+    /** 所有 VNC 系方案 (GNOME / Niri / KDE / Cinnamon / Hyprland / noVNC) 共用这个网页入口端口。 */
     const val PORT_VNC = 6080
 
     /** 原始 VNC (RFB) 端口: x11vnc / wayvnc 都只绑这个回环口, 由 websockify 转成 websocket。 */
@@ -166,6 +169,12 @@ object WorkspaceDesktopCatalog {
         WorkspaceDesktop.GNOME -> 1200L * 1024 * 1024
         // niri + wayvnc（Wayland 合成器，包体量小）
         WorkspaceDesktop.NIRI -> 120L * 1024 * 1024
+        // 完整 KDE Plasma 桌面（Plasma + KWin X11 + Xvnc）
+        WorkspaceDesktop.KDE -> 1400L * 1024 * 1024
+        // Cinnamon 桌面（Muffin + Cinnamon 会话 + Xvnc）
+        WorkspaceDesktop.CINNAMON -> 700L * 1024 * 1024
+        // Hyprland + wayvnc + cage（Wayland 合成器，包体量小）
+        WorkspaceDesktop.HYPRLAND -> 150L * 1024 * 1024
         WorkspaceDesktop.NONE, WorkspaceDesktop.CUSTOM -> null
     }
 
@@ -176,6 +185,9 @@ object WorkspaceDesktopCatalog {
         WorkspaceDesktop.JUPYTER -> 8
         WorkspaceDesktop.GNOME -> 15
         WorkspaceDesktop.NIRI -> 5
+        WorkspaceDesktop.KDE -> 18
+        WorkspaceDesktop.CINNAMON -> 10
+        WorkspaceDesktop.HYPRLAND -> 6
         WorkspaceDesktop.NONE, WorkspaceDesktop.CUSTOM -> null
     }
 
@@ -288,6 +300,45 @@ object WorkspaceDesktopCatalog {
             probeScript = NIRI_PROBE,
             startScript = niriStartScript(),
             stopScript = niriStopScript(),
+            port = PORT_VNC,
+            url = vncWebUrl(),
+            sizeHintBytes = sizeHintBytes(desktop),
+            installMinutes = installMinutes(desktop),
+        )
+
+        WorkspaceDesktop.KDE -> WorkspaceDesktopPlan(
+            desktop = desktop,
+            packageManager = packageManager,
+            installScript = kdeInstallScript(packageManager),
+            probeScript = KDE_PROBE,
+            startScript = kdeStartScript(),
+            stopScript = kdeStopScript(),
+            port = PORT_VNC,
+            url = vncWebUrl(),
+            sizeHintBytes = sizeHintBytes(desktop),
+            installMinutes = installMinutes(desktop),
+        )
+
+        WorkspaceDesktop.CINNAMON -> WorkspaceDesktopPlan(
+            desktop = desktop,
+            packageManager = packageManager,
+            installScript = cinnamonInstallScript(packageManager),
+            probeScript = CINNAMON_PROBE,
+            startScript = cinnamonStartScript(),
+            stopScript = cinnamonStopScript(),
+            port = PORT_VNC,
+            url = vncWebUrl(),
+            sizeHintBytes = sizeHintBytes(desktop),
+            installMinutes = installMinutes(desktop),
+        )
+
+        WorkspaceDesktop.HYPRLAND -> WorkspaceDesktopPlan(
+            desktop = desktop,
+            packageManager = packageManager,
+            installScript = hyprlandInstallScript(packageManager),
+            probeScript = HYPRLAND_PROBE,
+            startScript = hyprlandStartScript(),
+            stopScript = hyprlandStopScript(),
             port = PORT_VNC,
             url = vncWebUrl(),
             sizeHintBytes = sizeHintBytes(desktop),
@@ -848,6 +899,357 @@ object WorkspaceDesktopCatalog {
             fPatterns = listOf("airko-ws.py", "wayvnc", "niri", "cage", "sleep infinity"),
             xPatterns = listOf("foot"),
         ).toTypedArray(),
+    )
+
+    // ---------------------------------------------------------------- KDE Plasma（X11 + Xvnc）
+
+    /**
+     * KDE Plasma 的 X11 会话。和 GNOME 一样用 Xvnc 出画面，但 KDE 不依赖 logind：
+     * `startplasma-x11` 在 dbus 会话里就能起，不需要 GNOME 那套私有 system bus。
+     * 安装阶段先看仓库里有没有 plasma-desktop，避免下完几百 MB 才发现发行版不带 KDE。
+     */
+    private fun kdeInstallScript(packageManager: WorkspacePackageManager): String = when (packageManager) {
+        WorkspacePackageManager.APT -> script(
+            "set -e",
+            "export DEBIAN_FRONTEND=noninteractive",
+            "apt-get update",
+            "candidate=\$(apt-cache policy plasma-desktop 2>/dev/null | awk '/Candidate:/{print \$2; exit}')",
+            "if [ -z \"\$candidate\" ] || [ \"\$candidate\" = \"(none)\" ]; then",
+            "  echo 'plasma-desktop is unavailable in this distro repo (Ubuntu 22.04+ / Debian 12+)' >&2",
+            "  exit 1",
+            "fi",
+            "apt-get install -y --no-install-recommends kde-plasma-desktop plasma-workspace kwin-x11 konsole " +
+                "dbus-x11 tigervnc-standalone-server x11vnc novnc websockify procps fonts-dejavu-core",
+        )
+
+        WorkspacePackageManager.PACMAN -> script(
+            "set -e",
+            "pacman -Sy --noconfirm plasma-desktop plasma-workspace kwin konsole " +
+                "tigervnc x11vnc python python-pip curl ca-certificates",
+            pythonPipInstall("websockify"),
+            novncFrontendFromGithub(),
+        )
+
+        WorkspacePackageManager.DNF -> script(
+            "set -e",
+            "dnf install -y plasma-desktop plasma-workspace kwin konsole tigervnc-server x11vnc " +
+                "novnc python3-websockify procps-ng dbus-x11 || {",
+            "  echo 'plasma-desktop/kwin/tigervnc are unavailable in this Fedora repo' >&2",
+            "  exit 1",
+            "}",
+        )
+
+        WorkspacePackageManager.APK, WorkspacePackageManager.UNKNOWN ->
+            unavailableScript(
+                "KDE Plasma",
+                "KDE Plasma 在当前 rootfs 上 unavailable（Alpine 仓库没有完整 Plasma 桌面），" +
+                    "请换 Ubuntu/Debian/Arch/Fedora rootfs",
+            )
+    }
+
+    private const val KDE_PROBE =
+        "{ command -v Xvnc || command -v Xtigervnc || { command -v Xvfb && command -v x11vnc; }; } >/dev/null 2>&1 && " +
+            "command -v startplasma-x11 >/dev/null 2>&1 && " +
+            "{ command -v dbus-run-session || command -v dbus-launch; } >/dev/null 2>&1 && " +
+            "command -v websockify >/dev/null 2>&1 && " +
+            "{ test -f /usr/share/novnc/vnc.html || test -f /usr/share/webapps/novnc/vnc.html || " +
+            "test -f \"\$HOME/.airko/novnc/vnc.html\"; }"
+
+    private fun kdeStartScript(): String = script(
+        ": > $LOG_PATH",
+        "export DISPLAY=:1",
+        "export XDG_RUNTIME_DIR=/run",
+        "mkdir -p \"\$XDG_RUNTIME_DIR\" /tmp/.X11-unix",
+        "chmod 700 \"\$XDG_RUNTIME_DIR\"",
+        // proot 里没有 systemd: 清掉安装阶段可能留下的 /run/systemd, 避免会话去找 logind
+        "rm -rf \"\$XDG_RUNTIME_DIR/systemd\" \"\$XDG_RUNTIME_DIR/user\"",
+        "rm -f /tmp/.X11-unix/X1 /tmp/.X1-lock",
+        x11VncStartLines(),
+        "export XDG_SESSION_TYPE=x11",
+        "export XDG_CURRENT_DESKTOP=KDE",
+        "export XDG_SESSION_DESKTOP=KDE",
+        "export KDE_FULL_SESSION=true",
+        "export LIBGL_ALWAYS_SOFTWARE=1",
+        // 优先 dbus-run-session（生命周期干净）；老 rootfs 没有时退回 GNOME 同款的 dbus-launch
+        "if command -v dbus-run-session >/dev/null 2>&1; then",
+        "  (nohup dbus-run-session -- startplasma-x11 >> $LOG_PATH 2>&1 &)",
+        "elif command -v dbus-launch >/dev/null 2>&1; then",
+        "  eval \"\$(dbus-launch --sh-syntax)\"",
+        "  echo \"\$DBUS_SESSION_BUS_PID\" > /tmp/airko-kde-bus.pid",
+        "  (nohup startplasma-x11 >> $LOG_PATH 2>&1 &)",
+        "else",
+        "  echo 'dbus-run-session/dbus-launch not found; install dbus-x11' >> $LOG_PATH",
+        "  exit 1",
+        "fi",
+        "sleep 5",
+        // startplasma-x11 可能 exec 成 startplasma/plasmashell, 三者认一个就算起来了
+        "pgrep -f -- 'startplasma' >/dev/null 2>&1 || pgrep -f -- 'plasmashell' >/dev/null 2>&1 || " +
+            "{ echo 'startplasma-x11 did not stay up' >> $LOG_PATH; exit 1; }",
+        vncWebFrontendStartLines(),
+    )
+
+    private fun kdeStopScript(): String = script(
+        "pkill -f -- 'airko-ws.py' >/dev/null 2>&1 || true",
+        "pkill -f -- 'startplasma-x11' >/dev/null 2>&1 || true",
+        "pkill -f -- 'startplasma' >/dev/null 2>&1 || true",
+        "pkill -f -- 'plasmashell' >/dev/null 2>&1 || true",
+        "pkill -f -- 'kwin_x11' >/dev/null 2>&1 || true",
+        "pkill -f -- 'ksmserver' >/dev/null 2>&1 || true",
+        "pkill -f -- 'kded' >/dev/null 2>&1 || true",
+        "pkill -f -- 'kactivitymanagerd' >/dev/null 2>&1 || true",
+        "pkill -f -- 'Xtigervnc' >/dev/null 2>&1 || true",
+        "pkill -f -- 'Xvnc' >/dev/null 2>&1 || true",
+        "pkill -f -- 'Xvfb :1' >/dev/null 2>&1 || true",
+        "pkill -f -- 'x11vnc -display :1' >/dev/null 2>&1 || true",
+        "[ -f /tmp/airko-kde-bus.pid ] && kill -9 \"\$(cat /tmp/airko-kde-bus.pid)\" >/dev/null 2>&1 || true",
+        "pkill -f -- 'dbus-run-session' >/dev/null 2>&1 || true",
+        "pkill -f -- 'dbus-daemon --syslog' >/dev/null 2>&1 || true",
+        "pkill -f -- 'dbus-daemon --nofork' >/dev/null 2>&1 || true",
+        *stopSweep(
+            fPatterns = listOf(
+                "airko-ws.py", "startplasma-x11", "startplasma", "plasmashell", "kwin_x11",
+                "ksmserver", "kded", "kactivitymanagerd", "Xtigervnc", "Xvnc", "Xvfb :1", "x11vnc -display :1",
+                "dbus-run-session", "dbus-daemon --syslog", "dbus-daemon --nofork",
+            ),
+        ).toTypedArray(),
+    )
+
+    // ---------------------------------------------------------------- Cinnamon（X11 + Xvnc）
+
+    /**
+     * Cinnamon 的 X11 会话。`cinnamon-session` 负责拉起 cinnamon/muffin，
+     * 和 KDE 共用同一套 Xvnc + dbus + noVNC 结构。
+     */
+    private fun cinnamonInstallScript(packageManager: WorkspacePackageManager): String = when (packageManager) {
+        WorkspacePackageManager.APT -> script(
+            "set -e",
+            "export DEBIAN_FRONTEND=noninteractive",
+            "apt-get update",
+            "candidate=\$(apt-cache policy cinnamon 2>/dev/null | awk '/Candidate:/{print \$2; exit}')",
+            "if [ -z \"\$candidate\" ] || [ \"\$candidate\" = \"(none)\" ]; then",
+            "  echo 'cinnamon is unavailable in this distro repo (Ubuntu 22.04+ / Debian 12+)' >&2",
+            "  exit 1",
+            "fi",
+            "apt-get install -y --no-install-recommends cinnamon cinnamon-session dbus-x11 " +
+                "tigervnc-standalone-server x11vnc novnc websockify procps xterm fonts-dejavu-core",
+        )
+
+        WorkspacePackageManager.PACMAN -> script(
+            "set -e",
+            "pacman -Sy --noconfirm cinnamon x11vnc tigervnc xterm " +
+                "python python-pip curl ca-certificates",
+            pythonPipInstall("websockify"),
+            novncFrontendFromGithub(),
+        )
+
+        WorkspacePackageManager.DNF -> script(
+            "set -e",
+            "dnf install -y cinnamon cinnamon-session x11vnc tigervnc-server xterm " +
+                "novnc python3-websockify procps-ng dbus-x11 || {",
+            "  echo 'cinnamon/cinnamon-session are unavailable in this Fedora repo' >&2",
+            "  exit 1",
+            "}",
+        )
+
+        WorkspacePackageManager.APK, WorkspacePackageManager.UNKNOWN ->
+            unavailableScript(
+                "Cinnamon",
+                "Cinnamon 在当前 rootfs 上 unavailable（Alpine 仓库没有 Cinnamon），" +
+                    "请换 Ubuntu/Debian/Arch/Fedora rootfs",
+            )
+    }
+
+    private const val CINNAMON_PROBE =
+        "{ command -v Xvnc || command -v Xtigervnc || { command -v Xvfb && command -v x11vnc; }; } >/dev/null 2>&1 && " +
+            "command -v cinnamon-session >/dev/null 2>&1 && " +
+            "{ command -v dbus-run-session || command -v dbus-launch; } >/dev/null 2>&1 && " +
+            "command -v websockify >/dev/null 2>&1 && " +
+            "{ test -f /usr/share/novnc/vnc.html || test -f /usr/share/webapps/novnc/vnc.html || " +
+            "test -f \"\$HOME/.airko/novnc/vnc.html\"; }"
+
+    private fun cinnamonStartScript(): String = script(
+        ": > $LOG_PATH",
+        "export DISPLAY=:1",
+        "export XDG_RUNTIME_DIR=/run",
+        "mkdir -p \"\$XDG_RUNTIME_DIR\" /tmp/.X11-unix",
+        "chmod 700 \"\$XDG_RUNTIME_DIR\"",
+        // proot 里没有 systemd: 清掉安装阶段可能留下的 /run/systemd, 避免会话去找 logind
+        "rm -rf \"\$XDG_RUNTIME_DIR/systemd\" \"\$XDG_RUNTIME_DIR/user\"",
+        "rm -f /tmp/.X11-unix/X1 /tmp/.X1-lock",
+        x11VncStartLines(),
+        "export XDG_SESSION_TYPE=x11",
+        "export XDG_CURRENT_DESKTOP=X-Cinnamon",
+        "export XDG_SESSION_DESKTOP=cinnamon",
+        "export DESKTOP_SESSION=cinnamon",
+        "export LIBGL_ALWAYS_SOFTWARE=1",
+        "if command -v dbus-run-session >/dev/null 2>&1; then",
+        "  (nohup dbus-run-session -- cinnamon-session >> $LOG_PATH 2>&1 &)",
+        "elif command -v dbus-launch >/dev/null 2>&1; then",
+        "  eval \"\$(dbus-launch --sh-syntax)\"",
+        "  echo \"\$DBUS_SESSION_BUS_PID\" > /tmp/airko-cinnamon-bus.pid",
+        "  (nohup cinnamon-session >> $LOG_PATH 2>&1 &)",
+        "else",
+        "  echo 'dbus-run-session/dbus-launch not found; install dbus-x11' >> $LOG_PATH",
+        "  exit 1",
+        "fi",
+        "sleep 5",
+        "pgrep -f -- 'cinnamon-session' >/dev/null 2>&1 || pgrep -f -- 'cinnamon' >/dev/null 2>&1 || " +
+            "{ echo 'cinnamon-session did not stay up' >> $LOG_PATH; exit 1; }",
+        vncWebFrontendStartLines(),
+    )
+
+    private fun cinnamonStopScript(): String = script(
+        "pkill -f -- 'airko-ws.py' >/dev/null 2>&1 || true",
+        "pkill -f -- 'cinnamon-session' >/dev/null 2>&1 || true",
+        "pkill -f -- 'cinnamon' >/dev/null 2>&1 || true",
+        "pkill -f -- 'muffin' >/dev/null 2>&1 || true",
+        "pkill -f -- 'csd-' >/dev/null 2>&1 || true",
+        "pkill -f -- 'Xtigervnc' >/dev/null 2>&1 || true",
+        "pkill -f -- 'Xvnc' >/dev/null 2>&1 || true",
+        "pkill -f -- 'Xvfb :1' >/dev/null 2>&1 || true",
+        "pkill -f -- 'x11vnc -display :1' >/dev/null 2>&1 || true",
+        "[ -f /tmp/airko-cinnamon-bus.pid ] && kill -9 \"\$(cat /tmp/airko-cinnamon-bus.pid)\" >/dev/null 2>&1 || true",
+        "pkill -f -- 'dbus-run-session' >/dev/null 2>&1 || true",
+        "pkill -f -- 'dbus-daemon --syslog' >/dev/null 2>&1 || true",
+        "pkill -f -- 'dbus-daemon --nofork' >/dev/null 2>&1 || true",
+        *stopSweep(
+            fPatterns = listOf(
+                "airko-ws.py", "cinnamon-session", "cinnamon", "muffin", "csd-", "Xtigervnc", "Xvnc",
+                "Xvfb :1", "x11vnc -display :1", "dbus-run-session", "dbus-daemon --syslog",
+                "dbus-daemon --nofork",
+            ),
+        ).toTypedArray(),
+    )
+
+    // ---------------------------------------------------------------- Hyprland（Wayland + wayvnc）
+
+    /**
+     * Hyprland 的远程桌面。新版本优先用 Hyprland 自带的 headless 输出（无显示器时自动建
+     * HEADLESS-0）；老版本没有 headless 后端时退回 niri 同款的 cage 包裹。画面统一由
+     * wayvnc 出，websockify 再转成浏览器能连的 6080。Hyprland 不在老发行版仓库里时，
+     * 安装脚本直接给明确提示。
+     */
+    private fun hyprlandInstallScript(packageManager: WorkspacePackageManager): String = when (packageManager) {
+        WorkspacePackageManager.PACMAN -> script(
+            "set -e",
+            "pacman -Sy --noconfirm cage hyprland wayvnc wlr-randr foot " +
+                "python python-pip curl ca-certificates",
+            pythonPipInstall("websockify"),
+            novncFrontendFromGithub(),
+        )
+
+        WorkspacePackageManager.DNF -> script(
+            "set -e",
+            "dnf install -y cage hyprland wayvnc wlr-randr foot novnc python3-websockify procps-ng || {",
+            "  echo 'hyprland/wayvnc are unavailable in this Fedora repo; use a newer Fedora or Arch' >&2",
+            "  exit 1",
+            "}",
+        )
+
+        WorkspacePackageManager.APT -> script(
+            "set -e",
+            "export DEBIAN_FRONTEND=noninteractive",
+            "apt-get update",
+            "candidate=\$(apt-cache policy hyprland 2>/dev/null | awk '/Candidate:/{print \$2; exit}')",
+            "if [ -z \"\$candidate\" ] || [ \"\$candidate\" = \"(none)\" ]; then",
+            "  echo 'hyprland is unavailable in this distro repo (needs Ubuntu 25.04+ / Debian trixie+)' >&2",
+            "  echo 'use Arch/Fedora or the Hyprland PPA, or choose niri instead' >&2",
+            "  exit 1",
+            "fi",
+            "apt-get install -y cage hyprland wayvnc wlr-randr foot novnc websockify procps || {",
+            "  echo 'hyprland/wayvnc/cage are unavailable in this distro repo' >&2",
+            "  echo 'use Arch/Fedora or a newer Ubuntu, or choose niri instead' >&2",
+            "  exit 1",
+            "}",
+        )
+
+        WorkspacePackageManager.APK, WorkspacePackageManager.UNKNOWN ->
+            unavailableScript("Hyprland", "Hyprland 在当前 rootfs 上 unavailable，请换 Arch/Fedora/较新的 Ubuntu rootfs")
+    }
+
+    private const val HYPRLAND_PROBE =
+        "{ command -v Hyprland || command -v hyprland; } >/dev/null 2>&1 && " +
+            "command -v wayvnc >/dev/null 2>&1 && command -v cage >/dev/null 2>&1 && " +
+            "command -v websockify >/dev/null 2>&1"
+
+    private fun hyprlandStartScript(): String = script(
+        "export XDG_RUNTIME_DIR=/run",
+        "mkdir -p \"\$XDG_RUNTIME_DIR\" /tmp/.X11-unix",
+        "chmod 700 \"\$XDG_RUNTIME_DIR\"",
+        "# 清掉上次残留的 socket 与 X 锁, 保证合成器稳定拿到 wayland-0",
+        "rm -f \"\$XDG_RUNTIME_DIR\"/wayland-* \"\$XDG_RUNTIME_DIR\"/hypr/* /tmp/.X11-unix/X* /tmp/.X*-lock",
+        "# 1) 新版本 Hyprland 自带 headless 后端: 没有显示器时会自动创建 HEADLESS-0 输出",
+        "(AQ_NO_KMS_REQUIREMENT=1 HYPRLAND_NO_SD_NOTIFY=1 XDG_CURRENT_DESKTOP=Hyprland XDG_SESSION_TYPE=wayland " +
+            "LIBGL_ALWAYS_SOFTWARE=1 WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_LIBINPUT_NO_DEVICES=1 " +
+            "nohup Hyprland --i-am-really-stupid > /tmp/airko-hyprland.log 2>&1 &)",
+        "HYPR_DISPLAY=",
+        "for i in \$(seq 1 40); do",
+        "  if [ -S \"\$XDG_RUNTIME_DIR/wayland-0\" ]; then HYPR_DISPLAY=wayland-0; break; fi",
+        "  if [ -S \"\$XDG_RUNTIME_DIR/wayland-1\" ]; then HYPR_DISPLAY=wayland-1; break; fi",
+        "  sleep 0.5",
+        "done",
+        "if [ -z \"\$HYPR_DISPLAY\" ]; then",
+        "  # 2) 老版本 Hyprland 没有 headless 后端: 退回 niri 同款的 cage 包裹",
+        "  pkill -f -- 'Hyprland' >/dev/null 2>&1 || true",
+        "  rm -f \"\$XDG_RUNTIME_DIR\"/wayland-*",
+        "  (WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_LIBINPUT_NO_DEVICES=1 " +
+            "nohup cage -- sleep infinity > $LOG_PATH 2>&1 &)",
+        "  for i in \$(seq 1 20); do [ -S \"\$XDG_RUNTIME_DIR/wayland-0\" ] && break; sleep 0.5; done",
+        "  (WAYLAND_DISPLAY=wayland-0 wlr-randr --output HEADLESS-1 --custom-mode 1280x800 >/dev/null 2>&1 || true)",
+        "  (WAYLAND_DISPLAY=wayland-0 wlr-randr --output HEADLESS-1 --on >/dev/null 2>&1 || true)",
+        "  (AQ_NO_KMS_REQUIREMENT=1 HYPRLAND_NO_SD_NOTIFY=1 XDG_CURRENT_DESKTOP=Hyprland " +
+            "XDG_SESSION_TYPE=wayland LIBGL_ALWAYS_SOFTWARE=1 WAYLAND_DISPLAY=wayland-0 " +
+            "nohup Hyprland --i-am-really-stupid > /tmp/airko-hyprland.log 2>&1 &)",
+        "  # cage 占了 wayland-0, 嵌套的 Hyprland 是 wayland-1",
+        "  for i in \$(seq 1 40); do [ -S \"\$XDG_RUNTIME_DIR/wayland-1\" ] && " +
+            "{ HYPR_DISPLAY=wayland-1; break; }; sleep 0.5; done",
+        "fi",
+        "[ -n \"\$HYPR_DISPLAY\" ] || " +
+            "{ echo 'Hyprland did not start (no wayland socket)' >> $LOG_PATH; exit 1; }",
+        "(WAYLAND_DISPLAY=\"\$HYPR_DISPLAY\" nohup wayvnc 127.0.0.1 $VNC_RAW_PORT >> $LOG_PATH 2>&1 &)",
+        "# 触屏用户没有 Super 键, 主动开一个终端窗口, 不然进来只能看到黑屏",
+        "(command -v foot >/dev/null 2>&1 && WAYLAND_DISPLAY=\"\$HYPR_DISPLAY\" XDG_RUNTIME_DIR=/run " +
+            "nohup foot >/dev/null 2>&1 &)",
+        "sleep 2",
+        vncWebFrontendStartLines(),
+    )
+
+    private fun hyprlandStopScript(): String = script(
+        "pkill -f -- 'airko-ws.py' >/dev/null 2>&1 || true",
+        "pkill -f -- 'wayvnc' >/dev/null 2>&1 || true",
+        "pkill -f -- 'Hyprland' >/dev/null 2>&1 || true",
+        "pkill -f -- 'hyprland' >/dev/null 2>&1 || true",
+        "pkill -f -- 'cage' >/dev/null 2>&1 || true",
+        "pkill -f -- 'sleep infinity' >/dev/null 2>&1 || true",
+        "pkill -x foot >/dev/null 2>&1 || true",
+        *stopSweep(
+            fPatterns = listOf("airko-ws.py", "wayvnc", "Hyprland", "hyprland", "cage", "sleep infinity"),
+            xPatterns = listOf("foot"),
+        ).toTypedArray(),
+    )
+
+    /**
+     * X11 桌面共用的 X server + VNC: 优先 TigerVNC 的 Xvnc（与 GNOME 一致），
+     * 没有时退回 Xvfb + x11vnc（与 noVNC 一致）。两者都只绑回环地址。
+     */
+    private fun x11VncStartLines(): String = script(
+        "VNCBIN=\$(command -v Xvnc || command -v Xtigervnc)",
+        "if [ -n \"\$VNCBIN\" ]; then",
+        "  nohup \"\$VNCBIN\" :1 -geometry 1280x800 -depth 24 -SecurityTypes None " +
+            "-rfbport $VNC_RAW_PORT -localhost -AlwaysShared >> $LOG_PATH 2>&1 &",
+        "else",
+        "  command -v Xvfb >/dev/null 2>&1 && command -v x11vnc >/dev/null 2>&1 || {",
+        "    echo 'no VNC X server: install tigervnc-standalone-server or xvfb + x11vnc' >> $LOG_PATH",
+        "    exit 1",
+        "  }",
+        "  nohup Xvfb :1 -screen 0 1280x800x24 -nolisten tcp >> $LOG_PATH 2>&1 &",
+        "  sleep 1",
+        "  nohup x11vnc -display :1 -forever -shared -nopw -localhost -noshm " +
+            "-rfbport $VNC_RAW_PORT >> $LOG_PATH 2>&1 &",
+        "fi",
+        "sleep 3",
+        "pgrep -f -- 'Xvnc|Xtigervnc|Xvfb :1' >/dev/null 2>&1 || " +
+            "{ echo 'VNC X server did not start' >> $LOG_PATH; exit 1; }",
     )
 
     /** 该发行版装不了这个桌面时的明确提示（而不是让包管理器报一堆找不到的包名）。 */

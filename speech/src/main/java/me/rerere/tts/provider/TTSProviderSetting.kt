@@ -310,8 +310,6 @@ sealed class TTSProviderSetting {
                 XAI::class,
                 MiMo::class,
                 ElevenLabs::class,
-                Step::class,
-                FishAudio::class,
                 Volcengine::class,
             )
         }

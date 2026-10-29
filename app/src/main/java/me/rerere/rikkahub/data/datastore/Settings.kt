@@ -98,14 +98,30 @@ data class Settings(
     // 模型价格覆盖：用户按实际账单声明的价格，统计计价时优先于内置参考表
     val modelPriceOverrides: List<PriceOverride> = emptyList(),
 
-    /** 启动页：home＝主页；terminal＝直接打开 Linux 终端（第一个工作区） */
+    /** 启动页：home＝主页；terminal＝直接打开 Linux 终端；desktop＝直接打开工作区桌面 */
     val startupTarget: String = "home",
+    /** 启动直达终端/桌面时使用的工作区 id；空串表示使用第一个工作区 */
+    val startupWorkspaceId: String = "",
+    /** Harness 调参（默认关闭，保持内置行为） */
+    val harness: HarnessSetting = HarnessSetting(),
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储
         fun dummy() = Settings(init = true)
     }
 }
+
+/**
+ * Harness 调参：默认关闭。开启后使用这里的值覆盖内置常量
+ * （工具循环步数、单次工具输出上限、网络重试次数）。
+ */
+@Serializable
+data class HarnessSetting(
+    val customEnabled: Boolean = false,
+    val maxSteps: Int = 256,
+    val toolOutputKb: Int = 32,
+    val networkRetries: Int = 3,
+)
 
 @Serializable
 data class NetworkSetting(
@@ -229,6 +245,8 @@ data class DisplaySetting(
     val sidebarBackgroundImageOpacity: Float = 0.35f,
     /** 工作区终端把 AI 会话固定排在第一个标签页 */
     val terminalPinAiSession: Boolean = true,
+    /** 打开工作区桌面时默认进入全屏 */
+    val desktopFullscreenByDefault: Boolean = true,
 )
 
 @Serializable

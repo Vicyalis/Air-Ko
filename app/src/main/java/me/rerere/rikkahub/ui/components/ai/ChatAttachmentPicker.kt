@@ -42,7 +42,6 @@ internal data class ChatAttachmentPickerActions(
     val onPickVideo: () -> Unit,
     val onPickAudio: () -> Unit,
     val onPickFile: () -> Unit,
-    val onSketch: () -> Unit,
 )
 
 @Composable
@@ -193,19 +192,6 @@ internal fun rememberChatAttachmentPickerActions(
         }
 
     val scope = rememberCoroutineScope()
-    var showSketch by remember { mutableStateOf(false) }
-    if (showSketch) {
-        SketchDialog(
-            onDismiss = { showSketch = false },
-            onConfirm = { result ->
-                showSketch = false
-                scope.launch {
-                    inputState.addImages(listOfNotNull(filesManager.createChatFileBySketch(result)))
-                    onAttachmentAdded()
-                }
-            },
-        )
-    }
 
     return ChatAttachmentPickerActions(
         onTakePicture = onTakePicture,
@@ -213,7 +199,6 @@ internal fun rememberChatAttachmentPickerActions(
         onPickVideo = { videoPickerLauncher.launch("video/*") },
         onPickAudio = { audioPickerLauncher.launch("audio/*") },
         onPickFile = { filePickerLauncher.launch(arrayOf("*/*")) },
-        onSketch = { showSketch = true },
     )
 }
 

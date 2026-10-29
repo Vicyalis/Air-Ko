@@ -52,6 +52,8 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowLeft01
 import me.rerere.hugeicons.stroke.ArrowRight01
+import me.rerere.hugeicons.stroke.Book03
+import me.rerere.hugeicons.stroke.Bookshelf01
 import me.rerere.hugeicons.stroke.Camera01
 import me.rerere.hugeicons.stroke.Codesandbox
 import me.rerere.hugeicons.stroke.ComputerTerminal01
@@ -59,6 +61,7 @@ import me.rerere.hugeicons.stroke.Files02
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.MusicNote03
+import me.rerere.hugeicons.stroke.MessageAdd01
 import me.rerere.hugeicons.stroke.Package
 import me.rerere.hugeicons.stroke.Package01
 import me.rerere.hugeicons.stroke.PaintBoard
@@ -84,7 +87,6 @@ import org.koin.compose.koinInject
 private enum class FilesPickerPage {
     MAIN,
     MCP,
-    EXTENSIONS,
 }
 
 @Composable
@@ -106,7 +108,6 @@ internal fun FilesPicker(
     onPickVideo: () -> Unit,
     onPickAudio: () -> Unit,
     onPickFile: () -> Unit,
-    onSketch: () -> Unit,
     onStartVoiceMode: (() -> Unit)? = null,
 ) {
     val settings = LocalSettings.current
@@ -148,14 +149,6 @@ internal fun FilesPicker(
                 onBack = { page = FilesPickerPage.MAIN },
             )
 
-            FilesPickerPage.EXTENSIONS -> ExtensionPickerPage(
-                assistant = assistant,
-                settings = settings,
-                onUpdateAssistant = onUpdateAssistant,
-                onBack = { page = FilesPickerPage.MAIN },
-                onDismissAll = onDismiss,
-            )
-
             FilesPickerPage.MAIN -> Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -167,7 +160,6 @@ internal fun FilesPicker(
                     actions = buildList {
                         add(AttachmentAction(HugeIcons.Camera01, R.string.take_picture, onTakePic))
                         add(AttachmentAction(HugeIcons.Image02, R.string.photo, onPickImage))
-                        add(AttachmentAction(HugeIcons.PaintBoard, R.string.sketch, onSketch))
                         if (provider != null && provider is ProviderSetting.Google) {
                             add(AttachmentAction(HugeIcons.Video01, R.string.video, onPickVideo))
                             add(AttachmentAction(HugeIcons.MusicNote03, R.string.audio, onPickAudio))
@@ -182,7 +174,7 @@ internal fun FilesPicker(
                 // 分段列表：各项按显示条件依次占位，首尾项才有大圆角
                 val showWorkspace = workspaces.isNotEmpty()
                 val showMcp = settings.mcpServers.isNotEmpty()
-                val itemCount = 2 + listOf(showWorkspace, showWorkspace && showCwd, showMcp).count { it }
+                val itemCount = 4 + listOf(showWorkspace, showWorkspace && showCwd, showMcp).count { it }
                 var itemIndex = 0
                 Column(
                     verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
@@ -242,28 +234,60 @@ internal fun FilesPicker(
                         )
                     }
 
-                    // Extensions (Quick Messages + Prompt Injections + Skills)
-                    val activeCount =
-                        assistant.quickMessageIds.size +
-                            assistant.modeInjectionIds.size +
-                            assistant.lorebookIds.size +
-                            assistant.enabledSkills.size
+                    // 快捷消息
                     SegmentedListItem(
-                        onClick = { page = FilesPickerPage.EXTENSIONS },
+                        onClick = {
+                            onDismiss()
+                            navController.navigate(Screen.QuickMessages)
+                        },
                         shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
                         leadingContent = {
-                            Icon(
-                                imageVector = HugeIcons.Package,
-                                contentDescription = null,
-                            )
+                            Icon(HugeIcons.MessageAdd01, contentDescription = null)
                         },
                         trailingContent = {
-                            if (activeCount > 0) {
-                                CountBadge(count = activeCount)
+                            if (assistant.quickMessageIds.isNotEmpty()) {
+                                CountBadge(count = assistant.quickMessageIds.size)
                             }
                         },
                     ) {
-                        Text(stringResource(R.string.assistant_page_tab_extensions))
+                        Text(stringResource(R.string.assistant_page_quick_messages))
+                    }
+
+                    // 提示词注入 / 世界书
+                    SegmentedListItem(
+                        onClick = {
+                            onDismiss()
+                            navController.navigate(Screen.Prompts)
+                        },
+                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
+                        leadingContent = {
+                            Icon(HugeIcons.Book03, contentDescription = null)
+                        },
+                        trailingContent = {
+                            val count = assistant.modeInjectionIds.size + assistant.lorebookIds.size
+                            if (count > 0) CountBadge(count = count)
+                        },
+                    ) {
+                        Text(stringResource(R.string.extensions_page_prompts))
+                    }
+
+                    // 技能
+                    SegmentedListItem(
+                        onClick = {
+                            onDismiss()
+                            navController.navigate(Screen.Skills)
+                        },
+                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
+                        leadingContent = {
+                            Icon(HugeIcons.Bookshelf01, contentDescription = null)
+                        },
+                        trailingContent = {
+                            if (assistant.enabledSkills.isNotEmpty()) {
+                                CountBadge(count = assistant.enabledSkills.size)
+                            }
+                        },
+                    ) {
+                        Text(stringResource(R.string.extensions_page_agent_skills))
                     }
 
                     // Compress History Button

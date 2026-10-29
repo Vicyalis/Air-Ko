@@ -208,6 +208,7 @@ class WorkspaceFileSystem(
         isDirectory = isDirectory,
         sizeBytes = if (isFile) length() else 0L,
         updatedAt = lastModified(),
+        isSymbolicLink = runCatching { Files.isSymbolicLink(toPath()) }.getOrDefault(false),
     )
 
     private fun File.relativePath(root: File): String {

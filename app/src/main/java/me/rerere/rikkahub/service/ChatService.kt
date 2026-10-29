@@ -297,14 +297,14 @@ class ChatService(
 
     // ---- 初始化对话 ----
 
-    suspend fun initializeConversation(conversationId: Uuid) {
+    suspend fun initializeConversation(conversationId: Uuid, temporary: Boolean = false) {
         sessionManager.withSession(conversationId) { session ->
-            ensureInitialized(session)
+            ensureInitialized(session, temporary)
             settingsStore.selectAssistant(session.state.value.assistantId)
         }
     }
 
-    private suspend fun ensureInitialized(session: ConversationSession) {
+    private suspend fun ensureInitialized(session: ConversationSession, temporary: Boolean = false) {
         session.initialize {
             loadConversation(session.id) ?: run {
                 // 新建对话, 并添加预设消息
@@ -313,7 +313,7 @@ class ChatService(
                     id = session.id,
                     assistantId = assistant.id,
                     newConversation = true
-                ).updateCurrentMessages(assistant.presetMessages)
+                ).copy(temporary = temporary).updateCurrentMessages(assistant.presetMessages)
             }
         }
     }

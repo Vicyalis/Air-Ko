@@ -17,9 +17,9 @@ import me.rerere.search.SearchService.Companion.json
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
-private const val TAG = "RikkaHubSearchService"
+private const val TAG = "AirKoSearchService"
 
-object RikkaHubSearchService : SearchService<SearchServiceOptions.RikkaHubOptions> {
+object AirKoSearchService : SearchService<SearchServiceOptions.RikkaHubOptions> {
     override val name: String = "Air-Ko"
 
     @Composable
@@ -66,7 +66,7 @@ object RikkaHubSearchService : SearchService<SearchServiceOptions.RikkaHubOption
             val response = httpClient.newCall(request).await()
             if (response.isSuccessful) {
                 val responseBody = response.body.string().let {
-                    json.decodeFromString<RikkaHubSearchResponse>(it)
+                    json.decodeFromString<AirKoSearchResponse>(it)
                 }
 
                 return@withContext Result.success(
@@ -92,11 +92,11 @@ object RikkaHubSearchService : SearchService<SearchServiceOptions.RikkaHubOption
         commonOptions: SearchCommonOptions,
         serviceOptions: SearchServiceOptions.RikkaHubOptions
     ): Result<ScrapedResult> {
-        error("RikkaHub does not support scraping")
+        error("Air-Ko does not support scraping")
     }
 
     @Serializable
-    data class RikkaHubSearchResponse(
+    data class AirKoSearchResponse(
         val answer: String,
         val sources: List<Source>
     )

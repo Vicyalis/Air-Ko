@@ -63,6 +63,7 @@ import me.rerere.hugeicons.stroke.ImageToVideo
 import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.LanguageCircle
 import me.rerere.hugeicons.stroke.LookTop
+import me.rerere.hugeicons.stroke.MessageAdd01
 import me.rerere.hugeicons.stroke.PencilEdit01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Settings03
@@ -81,7 +82,7 @@ import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.ui.components.ai.AssistantPicker
 import me.rerere.rikkahub.ui.components.ui.BackupReminderCard
 import me.rerere.rikkahub.ui.components.ui.Greeting
-import me.rerere.rikkahub.ui.components.ui.RabbitLoadingIndicator
+import me.rerere.rikkahub.ui.components.ui.AirKoLoadingIndicator
 import me.rerere.rikkahub.ui.components.ui.SidebarBackground
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.components.ui.UpdateCard
@@ -378,15 +379,15 @@ fun ChatDrawerContent(
                 DrawerAction(
                     icon = {
                         Icon(
-                            imageVector = HugeIcons.LookTop,
-                            contentDescription = stringResource(R.string.assistant_page_title)
+                            imageVector = HugeIcons.MessageAdd01,
+                            contentDescription = stringResource(R.string.chat_drawer_temporary)
                         )
                     },
                     label = {
-                        Text(stringResource(R.string.assistant_page_title))
+                        Text(stringResource(R.string.chat_drawer_temporary))
                     },
                     onClick = {
-                        navController.navigate(Screen.Assistant)
+                        navController.navigate(Screen.Chat(Uuid.random().toString(), temporary = true))
                     },
                 )
 
@@ -436,14 +437,6 @@ fun ChatDrawerContent(
                             onClick = {
                                 showMenuPopup = false
                                 navController.navigate(Screen.Translator)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.chat_page_menu_image_generation)) },
-                            leadingIcon = { Icon(HugeIcons.Image02, null) },
-                            onClick = {
-                                showMenuPopup = false
-                                navController.navigate(Screen.ImageGen)
                             }
                         )
                     }
@@ -778,7 +771,7 @@ private fun MemoryDreamingEntry(onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            RabbitLoadingIndicator(modifier = Modifier.size(18.dp))
+            AirKoLoadingIndicator(modifier = Modifier.size(18.dp))
             Text(
                 text = stringResource(R.string.memory_dreaming),
                 style = MaterialTheme.typography.bodyMedium,

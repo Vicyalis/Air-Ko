@@ -53,6 +53,9 @@ internal fun desktopSchemeLabel(desktop: WorkspaceDesktop): String = stringResou
         WorkspaceDesktop.JUPYTER -> R.string.wp5_desktop_scheme_jupyter
         WorkspaceDesktop.GNOME -> R.string.wp5_desktop_scheme_gnome
         WorkspaceDesktop.NIRI -> R.string.wp5_desktop_scheme_niri
+        WorkspaceDesktop.KDE -> R.string.wp5_desktop_scheme_kde
+        WorkspaceDesktop.CINNAMON -> R.string.wp5_desktop_scheme_cinnamon
+        WorkspaceDesktop.HYPRLAND -> R.string.wp5_desktop_scheme_hyprland
         WorkspaceDesktop.CUSTOM -> R.string.wp5_desktop_scheme_custom
     }
 )
@@ -66,6 +69,9 @@ internal fun desktopSchemeSummary(desktop: WorkspaceDesktop): String = stringRes
         WorkspaceDesktop.JUPYTER -> R.string.wp5_desktop_scheme_summary_jupyter
         WorkspaceDesktop.GNOME -> R.string.wp5_desktop_scheme_summary_gnome
         WorkspaceDesktop.NIRI -> R.string.wp5_desktop_scheme_summary_niri
+        WorkspaceDesktop.KDE -> R.string.wp5_desktop_scheme_summary_kde
+        WorkspaceDesktop.CINNAMON -> R.string.wp5_desktop_scheme_summary_cinnamon
+        WorkspaceDesktop.HYPRLAND -> R.string.wp5_desktop_scheme_summary_hyprland
         WorkspaceDesktop.CUSTOM -> R.string.wp5_desktop_scheme_summary_custom
     }
 )

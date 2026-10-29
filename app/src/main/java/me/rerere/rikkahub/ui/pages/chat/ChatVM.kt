@@ -27,6 +27,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FilesManager
@@ -52,6 +53,7 @@ private const val TAG = "ChatVM"
 
 class ChatVM(
     id: String,
+    private val temporary: Boolean,
     private val context: Application,
     private val settingsStore: SettingsStore,
     private val conversationRepo: ConversationRepository,
@@ -59,6 +61,7 @@ class ChatVM(
     val updateChecker: UpdateChecker,
     private val filesManager: FilesManager,
     private val favoriteRepository: FavoriteRepository,
+    private val appScope: AppScope,
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
@@ -91,7 +94,7 @@ class ChatVM(
 
         // 初始化对话
         viewModelScope.launch {
-            chatService.initializeConversation(_conversationId)
+            chatService.initializeConversation(_conversationId, temporary)
         }
 
         // 记住对话ID, 方便下次启动恢复
@@ -101,6 +104,13 @@ class ChatVM(
     override fun onCleared() {
         voiceSession.stop()
         super.onCleared()
+        // 临时对话退出即删除，不进入历史记录
+        if (temporary) {
+            val snapshot = conversation.value
+            appScope.launch {
+                runCatching { conversationRepo.deleteConversation(snapshot) }
+            }
+        }
         // 移除对话引用
         chatService.removeConversationReference(_conversationId)
     }

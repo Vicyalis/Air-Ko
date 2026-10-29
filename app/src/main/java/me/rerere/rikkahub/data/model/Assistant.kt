@@ -39,6 +39,9 @@ data class Assistant(
     val customBodies: List<CustomBody> = emptyList(),
     val mcpServers: Set<Uuid> = emptySet(),
     val localTools: List<LocalToolOption> = listOf(LocalToolOption.TimeInfo),
+    // 本地工具/工作区工具的审批总开关。默认 false(安全优先)：可审批工具执行前都要确认。
+    // true 时这些工具直接执行；设备控制不受影响，仍由 deviceAgentAutoApprove 单独控制。
+    val localToolsAutoApprove: Boolean = false,
     val enableWebSearch: Boolean = false, // 网络搜索开关(每个助手独立)
     val workspaceId: Uuid? = null,
     val background: String? = null, // 聊天页背景图地址(本地文件 URI 或网络 URL), 为 null 时无背景

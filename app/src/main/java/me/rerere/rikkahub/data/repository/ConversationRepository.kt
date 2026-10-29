@@ -5,6 +5,7 @@ import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import androidx.paging.PagingSource
+import androidx.paging.filter
 import androidx.paging.map
 import androidx.room.withTransaction
 import kotlinx.coroutines.CancellationException
@@ -61,7 +62,7 @@ class ConversationRepository(
                 flow.map { entity ->
                     // 列表视图不需要完整的 nodes，使用空列表
                     conversationEntityToConversation(entity, emptyList())
-                }
+                }.filterNot { it.temporary }
             }
     }
 
@@ -75,7 +76,7 @@ class ConversationRepository(
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
-        }
+        }.filter { !it.temporary }
     }
 
     fun getUnfiledConversationsOfAssistantPaging(
@@ -96,7 +97,7 @@ class ConversationRepository(
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
-        }
+        }.filter { !it.temporary }
     }
 
     fun getConversationsOfFolderPaging(
@@ -117,7 +118,7 @@ class ConversationRepository(
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
-        }
+        }.filter { !it.temporary }
     }
 
     suspend fun getConversationsOfAssistantPage(
@@ -256,7 +257,7 @@ class ConversationRepository(
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
-        }
+        }.filter { !it.temporary }
     }
 
     fun searchConversationsOfAssistant(assistantId: Uuid, titleKeyword: String): Flow<List<Conversation>> {

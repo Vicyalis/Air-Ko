@@ -60,7 +60,7 @@ class ExaSearchServiceTest {
     fun `current query does not inject domain or freshness filters`() {
         val body = ExaSearchService.buildSearchRequestBody(
             params = buildJsonObject {
-                put("query", "What is the current stable RikkaHub version?")
+                put("query", "What is the current stable Air-Ko version?")
             },
             resultSize = 10,
         )

@@ -1,6 +1,7 @@
 package me.rerere.rikkahub
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -24,6 +25,8 @@ import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.model.ModelPricing
 import me.rerere.rikkahub.device.ShizukuSupport
 import me.rerere.rikkahub.data.skills.SkillManager
+import me.rerere.rikkahub.ui.hooks.applySavedAppLanguage
+import me.rerere.rikkahub.ui.hooks.withAppLanguage
 import java.io.File
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -68,9 +71,14 @@ const val MEMORY_DREAM_NOTIFICATION_CHANNEL_ID = "memory_dream"
 const val WORKSPACE_TERMINAL_NOTIFICATION_CHANNEL_ID = "workspace_terminal"
 const val DEVICE_CONTROL_NOTIFICATION_CHANNEL_ID = "device_control"
 
-class RikkaHubApp : Application() {
+class AirKoApp : Application() {
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base.withAppLanguage())
+    }
+
     override fun onCreate() {
         super.onCreate()
+        applySavedAppLanguage(this)
         // 价格表很小，启动时读一次并常驻，聊天/统计里查价就不用碰 IO
         ModelPricing.load(this)
         // Shizuku 支持层只需要一个 application context（绑定 UserService 用）
@@ -78,7 +86,7 @@ class RikkaHubApp : Application() {
         // Restore files and settings before eager Koin singletons or workers can access them.
         try {
             val restored = runBlocking(Dispatchers.IO) {
-                BackupManager.applyPendingRestore(this@RikkaHubApp, JsonInstant)
+                BackupManager.applyPendingRestore(this@AirKoApp, JsonInstant)
             }
             if (restored) {
                 Toast.makeText(this, R.string.backup_page_restore_success, Toast.LENGTH_LONG).show()
@@ -89,7 +97,7 @@ class RikkaHubApp : Application() {
         }
         startKoin {
             androidLogger()
-            androidContext(this@RikkaHubApp)
+            androidContext(this@AirKoApp)
             workManagerFactory()
             modules(appModule, viewModelModule, dataSourceModule, repositoryModule)
         }
@@ -254,7 +262,7 @@ class RikkaHubApp : Application() {
                 if (settings.webServerEnabled) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                         ContextCompat.checkSelfPermission(
-                            this@RikkaHubApp,
+                            this@AirKoApp,
                             android.Manifest.permission.POST_NOTIFICATIONS
                         ) != PackageManager.PERMISSION_GRANTED
                     ) {
@@ -264,14 +272,14 @@ class RikkaHubApp : Application() {
                     if (Build.VERSION.SDK_INT >= 37 &&
                         !settings.webServerLocalhostOnly &&
                         ContextCompat.checkSelfPermission(
-                            this@RikkaHubApp,
+                            this@AirKoApp,
                             android.Manifest.permission.ACCESS_LOCAL_NETWORK
                         ) != PackageManager.PERMISSION_GRANTED
                     ) {
                         Log.w(TAG, "startWebServerIfEnabled: local network permission not granted, skipping")
                         return@launch
                     }
-                    val intent = Intent(this@RikkaHubApp, WebServerService::class.java).apply {
+                    val intent = Intent(this@AirKoApp, WebServerService::class.java).apply {
                         action = WebServerService.ACTION_START
                         putExtra(WebServerService.EXTRA_PORT, settings.webServerPort)
                         putExtra(WebServerService.EXTRA_LOCALHOST_ONLY, settings.webServerLocalhostOnly)
@@ -288,11 +296,11 @@ class RikkaHubApp : Application() {
         get<AppScope>().launch {
             runCatching {
                 delay(1_000)
-                if (this@RikkaHubApp.isDeviceControlAuthorized() &&
-                    DeviceControlPrefs.watchdogEnabled(this@RikkaHubApp) &&
-                    !DeviceControlPrefs.userStopped(this@RikkaHubApp)
+                if (this@AirKoApp.isDeviceControlAuthorized() &&
+                    DeviceControlPrefs.watchdogEnabled(this@AirKoApp) &&
+                    !DeviceControlPrefs.userStopped(this@AirKoApp)
                 ) {
-                    DeviceControlWatchdogService.ensure(this@RikkaHubApp)
+                    DeviceControlWatchdogService.ensure(this@AirKoApp)
                 }
             }.onFailure {
                 Log.e(TAG, "startDeviceControlWatchdogIfEligible failed", it)

@@ -26,6 +26,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import java.time.Instant
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Copy01
 import me.rerere.hugeicons.stroke.MagicWand01
@@ -33,6 +37,7 @@ import me.rerere.hugeicons.stroke.McpServer
 import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.mcp.sanitizeMcpServerName
 import me.rerere.rikkahub.data.recommend.InstallKind
 import me.rerere.rikkahub.data.recommend.RecommendEntry
 import me.rerere.rikkahub.data.recommend.RecommendSort
@@ -120,22 +125,44 @@ fun recommendOriginLabel(entry: RecommendEntry): String = when {
 /**
  * MCP 设置里对应的配置片段。
  *
- * 生成的 JSON 与设置页「导入」接受的格式一致（mcpServers / type / url），
- * 本地类条目没有可用地址时返回空串，由 UI 换成部署讲解。
+ * 生成的 JSON 与设置页「导入」接受的格式一致（mcpServers / type / url / headers / oauth）。
+ * 只对「地址直接可用」的条目返回片段；`source_url` 指向配置 payload 的条目
+ * 需要安装时下载解析，不能把配置文件的地址当成 MCP 端点展示给用户。
  */
 fun mcpConfigSnippet(entry: RecommendEntry): String {
-    val url = entry.resolvedRemoteUrl
+    val url = entry.mcpDirectUrl
     if (url.isBlank()) return ""
-    return buildString {
-        appendLine("{")
-        appendLine("  \"mcpServers\": {")
-        appendLine("    \"${entry.name}\": {")
-        appendLine("      \"type\": \"streamable_http\",")
-        appendLine("      \"url\": \"$url\"")
-        appendLine("    }")
-        appendLine("  }")
-        append("}")
+    val server = buildJsonObject {
+        put("type", entry.mcpTransport.wire)
+        put("url", url)
+        if (entry.mcpHeaders.isNotEmpty()) {
+            put(
+                "headers",
+                buildJsonObject {
+                    entry.mcpHeaders.forEach { (name, value) -> put(name, value) }
+                }
+            )
+        }
+        entry.mcpOauth?.takeIf { it.enabled }?.let { oauth ->
+            put(
+                "oauth",
+                buildJsonObject {
+                    put("enabled", true)
+                    oauth.scope?.takeIf { it.isNotBlank() }?.let { put("scope", it) }
+                }
+            )
+        }
     }
+    val root = buildJsonObject {
+        put(
+            "mcpServers",
+            buildJsonObject {
+                // 名称会写进设置并拼进工具名，展示名里的空格/中文在这里先规范化
+                put(sanitizeMcpServerName(entry.name, entry.id), server)
+            }
+        )
+    }
+    return Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), root)
 }
 
 /** 部署讲解里「装依赖」对应的命令，按安装方式套用各自的包管理器。 */

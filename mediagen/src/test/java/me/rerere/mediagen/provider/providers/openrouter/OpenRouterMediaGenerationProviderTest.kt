@@ -307,7 +307,7 @@ class OpenRouterMediaGenerationProviderTest {
             requests.map { "${it.method} ${it.url}" },
         )
         assertTrue(requests.all { it.header("Authorization") == "Bearer key" })
-        assertEquals("RikkaHub", requests.first().header("X-Title"))
+        assertEquals("Air-Ko", requests.first().header("X-Title"))
         assertEquals(JsonPrimitive("google/veo-3.1"), parse(requests[1].bodyAsString())["model"])
     }
 

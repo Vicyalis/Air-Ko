@@ -67,6 +67,12 @@
   <string name="wp5_desktop_scheme_summary_jupyter">面向 /workspace 的 JupyterLab 笔记本。</string>
   <string name="wp5_desktop_scheme_summary_none">不启用桌面，工作区只提供终端。</string>
   <string name="wp5_desktop_scheme_summary_novnc">通过 noVNC 在浏览器里使用轻量 Linux 桌面（Fluxbox）。</string>
+  <string name="wp5_desktop_scheme_kde">KDE Plasma 桌面（X11 + VNC）</string>
+  <string name="wp5_desktop_scheme_summary_kde">完整 KDE Plasma 桌面，通过 VNC 传画面；下载较大（约 1.4 GB），支持 Ubuntu/Debian/Arch/Fedora</string>
+  <string name="wp5_desktop_scheme_cinnamon">Cinnamon 桌面（X11 + VNC）</string>
+  <string name="wp5_desktop_scheme_summary_cinnamon">Cinnamon 桌面，通过 VNC 传画面；下载约 700 MB，支持 Ubuntu/Debian/Arch/Fedora</string>
+  <string name="wp5_desktop_scheme_hyprland">Hyprland（Wayland + VNC）</string>
+  <string name="wp5_desktop_scheme_summary_hyprland">平铺式 Wayland 合成器，配 wayvnc；包很小，但需要较新的发行版（Arch/Fedora/Ubuntu 25.04+）</string>
   <string name="wp5_desktop_status_installed">已安装</string>
   <string name="wp5_desktop_status_not_configured">未配置</string>
   <string name="wp5_desktop_status_not_installed">未安装</string>

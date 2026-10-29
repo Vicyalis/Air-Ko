@@ -1,0 +1,63 @@
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:aapt="http://schemas.android.com/aapt">
+
+  <!-- Air-Ko 标志：几何「A」，加载时轻微脉动 -->
+  <aapt:attr name="android:drawable">
+    <vector
+      android:width="128dp"
+      android:height="128dp"
+      android:viewportWidth="108"
+      android:viewportHeight="108">
+      <group
+        android:name="logo_group"
+        android:pivotX="54"
+        android:pivotY="54">
+        <path
+          android:strokeColor="#333333"
+          android:strokeWidth="8"
+          android:strokeLineJoin="round"
+          android:strokeLineCap="round"
+          android:pathData="M35.3 80 L54 28 M54 28 L72.7 80 M44.6 60.2 L63.4 60.2" />
+      </group>
+    </vector>
+  </aapt:attr>
+
+  <target android:name="logo_group">
+    <aapt:attr name="android:animation">
+      <set android:ordering="together">
+        <objectAnimator
+          android:duration="1200"
+          android:propertyName="scaleX"
+          android:repeatCount="infinite">
+          <propertyValuesHolder android:propertyName="scaleX">
+            <keyframe
+              android:fraction="0.0"
+              android:value="1.0" />
+            <keyframe
+              android:fraction="0.5"
+              android:value="0.86" />
+            <keyframe
+              android:fraction="1.0"
+              android:value="1.0" />
+          </propertyValuesHolder>
+        </objectAnimator>
+        <objectAnimator
+          android:duration="1200"
+          android:propertyName="scaleY"
+          android:repeatCount="infinite">
+          <propertyValuesHolder android:propertyName="scaleY">
+            <keyframe
+              android:fraction="0.0"
+              android:value="1.0" />
+            <keyframe
+              android:fraction="0.5"
+              android:value="0.86" />
+            <keyframe
+              android:fraction="1.0"
+              android:value="1.0" />
+          </propertyValuesHolder>
+        </objectAnimator>
+      </set>
+    </aapt:attr>
+  </target>
+</animated-vector>

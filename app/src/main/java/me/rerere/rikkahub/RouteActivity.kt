@@ -1,6 +1,7 @@
 package me.rerere.rikkahub
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -57,6 +58,7 @@ import coil3.request.crossfade
 import coil3.svg.SvgDecoder
 import me.rerere.ui.toast.Toaster
 import me.rerere.ui.toast.rememberToasterState
+import me.rerere.rikkahub.ui.hooks.withAppLanguage
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -97,7 +99,6 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantRequestPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
 import me.rerere.rikkahub.ui.pages.debug.DebugPage
-import me.rerere.rikkahub.ui.pages.extensions.ExtensionsPage
 import me.rerere.rikkahub.ui.pages.extensions.PromptPage
 import me.rerere.rikkahub.ui.pages.extensions.QuickMessagesPage
 import me.rerere.rikkahub.ui.pages.extensions.recommend.RecommendDetailPage
@@ -116,7 +117,6 @@ import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalPage
 import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.rikkahub.ui.pages.favorite.FavoritePage
 import me.rerere.rikkahub.ui.pages.history.HistoryPage
-import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.log.LogPage
 import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationPage
 import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationSessionsPage
@@ -135,6 +135,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingLinuxStoragePage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
 import me.rerere.rikkahub.ui.pages.setting.SettingModelPage
+import me.rerere.rikkahub.ui.pages.setting.HarnessSettingPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderPage
@@ -161,6 +162,10 @@ private const val ACTION_TRANSLATE = "me.rerere.rikkahub.action.TRANSLATE"
 private const val ACTION_MEDIA_CREATION = "me.rerere.rikkahub.action.MEDIA_CREATION"
 
 class RouteActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(newBase.withAppLanguage())
+    }
+
     private val okHttpClient by inject<OkHttpClient>()
     private val settingsStore by inject<SettingsStore>()
     private val mediaCreationRepository by inject<MediaCreationRepository>()
@@ -330,15 +335,22 @@ class RouteActivity : ComponentActivity() {
             }
         }
 
-        // 「启动时直接进 Linux 终端」：引导走完且设置打开时，把首页换成第一个工作区的终端
+        // 「启动直达终端/桌面」：引导走完且设置打开时，把首页换成指定工作区的终端/桌面
         LaunchedEffect(Unit) {
             if (!readBooleanPreference("onboarding_completed", false)) return@LaunchedEffect
-            if (settings.startupTarget != "terminal") return@LaunchedEffect
+            val target = settings.startupTarget
+            if (target == "home") return@LaunchedEffect
             if (backStack.size != 1 || backStack.firstOrNull() !is Screen.Chat) return@LaunchedEffect
-            val workspaceId = runCatching {
-                workspaceRepository.listFlow().first().firstOrNull()?.id
-            }.getOrNull() ?: return@LaunchedEffect
-            backStack[0] = Screen.WorkspaceTerminal(workspaceId)
+            val workspaces = runCatching {
+                workspaceRepository.listFlow().first()
+            }.getOrDefault(emptyList())
+            val workspace = workspaces.firstOrNull { it.id == settings.startupWorkspaceId }
+                ?: workspaces.firstOrNull()
+                ?: return@LaunchedEffect
+            backStack[0] = when (target) {
+                "desktop" -> Screen.WorkspaceDesktop(workspace.id)
+                else -> Screen.WorkspaceTerminal(workspace.id)
+            }
         }
 
         SharedTransitionLayout {
@@ -399,7 +411,8 @@ class RouteActivity : ComponentActivity() {
                                     id = Uuid.parse(key.id),
                                     text = key.text,
                                     files = key.files.map { it.toUri() },
-                                    nodeId = key.nodeId?.let { Uuid.parse(it) }
+                                    nodeId = key.nodeId?.let { Uuid.parse(it) },
+                                    temporary = key.temporary,
                                 )
                             }
 
@@ -470,10 +483,6 @@ class RouteActivity : ComponentActivity() {
                                 BackupPage()
                             }
 
-                            entry<Screen.ImageGen> {
-                                ImageGenPage()
-                            }
-
                             entry<Screen.MediaCreationSessions> {
                                 MediaCreationSessionsPage()
                             }
@@ -527,6 +536,10 @@ class RouteActivity : ComponentActivity() {
                                 SettingModelPage()
                             }
 
+                            entry<Screen.Harness> {
+                                HarnessSettingPage()
+                            }
+
                             entry<Screen.SettingSearch> {
                                 SettingSearchPage()
                             }
@@ -578,10 +591,6 @@ class RouteActivity : ComponentActivity() {
 
                             entry<Screen.Log> {
                                 LogPage()
-                            }
-
-                            entry<Screen.Extensions> {
-                                ExtensionsPage()
                             }
 
                             entry<Screen.QuickMessages> {
@@ -705,7 +714,8 @@ sealed interface Screen : NavKey {
         val id: String,
         val text: String? = null,
         val files: List<String> = emptyList(),
-        val nodeId: String? = null
+        val nodeId: String? = null,
+        val temporary: Boolean = false,
     ) : Screen
 
     @Serializable
@@ -758,9 +768,6 @@ sealed interface Screen : NavKey {
     data object Backup : Screen
 
     @Serializable
-    data object ImageGen : Screen
-
-    @Serializable
     data object MediaCreationSessions : Screen
 
     @Serializable
@@ -798,6 +805,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingModels : Screen
+
+    @Serializable
+    data object Harness : Screen
 
     @Serializable
     data object ModelPricing : Screen
@@ -840,9 +850,6 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Log : Screen
-
-    @Serializable
-    data object Extensions : Screen
 
     @Serializable
     data object QuickMessages : Screen

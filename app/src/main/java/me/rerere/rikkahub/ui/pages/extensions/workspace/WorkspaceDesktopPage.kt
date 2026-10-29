@@ -61,11 +61,13 @@ import me.rerere.hugeicons.stroke.Stop
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.getActivity
 import me.rerere.ui.toast.ToastType
 import me.rerere.workspace.WorkspaceDesktopCatalog
+import me.rerere.workspace.WorkspaceDesktop
 import org.koin.compose.koinInject
 
 /**
@@ -83,6 +85,7 @@ fun WorkspaceDesktopPage(id: String) {
     val state by manager.observe(id).collectAsStateWithLifecycle(
         initialValue = WorkspaceDesktopState(workspaceId = id),
     )
+    val settings = LocalSettings.current
 
     val noBrowserMessage = stringResource(R.string.wp5_desktop_page_no_browser)
 
@@ -90,7 +93,9 @@ fun WorkspaceDesktopPage(id: String) {
     var webView by remember(id) { mutableStateOf<WebView?>(null) }
     var loading by remember(id) { mutableStateOf(false) }
     var loadFailed by remember(id) { mutableStateOf(false) }
-    var fullscreen by remember(id) { mutableStateOf(false) }
+    var fullscreen by remember(id) {
+        mutableStateOf(settings.displaySetting.desktopFullscreenByDefault)
+    }
 
     // 全屏时返回键先退出全屏, 而不是直接离开页面
     BackHandler(enabled = fullscreen) { fullscreen = false }
@@ -114,6 +119,17 @@ fun WorkspaceDesktopPage(id: String) {
     LaunchedEffect(id) {
         workspaceName = runCatching { repository.getById(id)?.name }.getOrNull()
         manager.refresh(id)
+    }
+
+    // 点击即开：桌面已安装但没在运行时，进页面自动启动一次
+    var autoStarted by remember(id) { mutableStateOf(false) }
+    LaunchedEffect(id, state.loaded, state.installed, state.running, state.busy, state.desktop) {
+        if (!autoStarted && state.loaded && state.desktop != WorkspaceDesktop.NONE &&
+            state.installed != false && !state.running && state.busy == null
+        ) {
+            autoStarted = true
+            manager.start(id)
+        }
     }
 
     fun openExternal(target: String) {

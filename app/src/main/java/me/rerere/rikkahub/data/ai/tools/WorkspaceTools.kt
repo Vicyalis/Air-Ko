@@ -23,31 +23,41 @@ import java.io.ByteArrayOutputStream
 private const val SHELL_TIMEOUT_MAX_SECONDS = 600L
 private const val MAX_READ_FILE_BYTES = 8L * 1024 * 1024
 
+// 默认安全优先：工作区工具在助手总开关关闭时都需要确认。
+// 用户在工作区详情里的单工具覆盖仍然优先；助手总开关打开后全部直接执行。
 val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
-    "workspace_read_file" to false,
-    "workspace_write_file" to false,
-    "workspace_edit_file" to false,
+    "workspace_read_file" to true,
+    "workspace_write_file" to true,
+    "workspace_edit_file" to true,
     "workspace_shell" to true,
 )
 
-fun resolveWorkspaceToolApproval(name: String, overrides: Map<String, Boolean>): Boolean =
-    overrides[name] ?: WorkspaceToolDefaultApprovals[name] ?: false
+fun resolveWorkspaceToolApproval(
+    name: String,
+    overrides: Map<String, Boolean>,
+    autoApprove: Boolean = false,
+): Boolean = if (autoApprove) {
+    false
+} else {
+    overrides[name] ?: WorkspaceToolDefaultApprovals[name] ?: true
+}
 
 suspend fun createWorkspaceTools(
     workspaceId: String?,
     workspaceRepository: WorkspaceRepository,
     cwd: String? = null,
+    autoApprove: Boolean = false,
 ): List<Tool> {
     if (workspaceId.isNullOrBlank()) return emptyList()
     val approvalOverrides = workspaceRepository.getById(workspaceId)?.toolApprovalOverrides().orEmpty()
-    fun needsApproval(name: String) = resolveWorkspaceToolApproval(name, approvalOverrides)
+    fun needsApproval(name: String) = resolveWorkspaceToolApproval(name, approvalOverrides, autoApprove)
 
     val shellCwd = cwd?.removePrefix("/workspace/")?.removePrefix("/workspace")
 
     return listOf(
         createReadFileTool(workspaceId, ::needsApproval, workspaceRepository),
-        createWriteFileTool(workspaceId, ::needsApproval, workspaceRepository),
-        createEditFileTool(workspaceId, ::needsApproval, workspaceRepository),
+        createWriteFileTool(workspaceId, ::needsApproval, autoApprove, workspaceRepository),
+        createEditFileTool(workspaceId, ::needsApproval, autoApprove, workspaceRepository),
         createShellTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
     )
 }
@@ -100,6 +110,7 @@ private fun createReadFileTool(
 private fun createWriteFileTool(
     workspaceId: String,
     needsApproval: (String) -> Boolean,
+    autoApprove: Boolean,
     workspaceRepository: WorkspaceRepository,
 ) = Tool(
     name = "workspace_write_file",
@@ -123,7 +134,9 @@ private fun createWriteFileTool(
             required = listOf("path", "text"),
         )
     },
-    needsApproval = { needsApproval("workspace_write_file") || it.pathOutsideWritableRoots("path") },
+    needsApproval = {
+        needsApproval("workspace_write_file") || (!autoApprove && it.pathOutsideWritableRoots("path"))
+    },
     execute = {
         val params = it.jsonObject
         val path = params.absolutePath("path")
@@ -137,6 +150,7 @@ private fun createWriteFileTool(
 private fun createEditFileTool(
     workspaceId: String,
     needsApproval: (String) -> Boolean,
+    autoApprove: Boolean,
     workspaceRepository: WorkspaceRepository,
 ) = Tool(
     name = "workspace_edit_file",
@@ -166,7 +180,9 @@ private fun createEditFileTool(
             required = listOf("path", "old_text", "new_text"),
         )
     },
-    needsApproval = { needsApproval("workspace_edit_file") || it.pathOutsideWritableRoots("path") },
+    needsApproval = {
+        needsApproval("workspace_edit_file") || (!autoApprove && it.pathOutsideWritableRoots("path"))
+    },
     execute = {
         val params = it.jsonObject
         val path = params.absolutePath("path")

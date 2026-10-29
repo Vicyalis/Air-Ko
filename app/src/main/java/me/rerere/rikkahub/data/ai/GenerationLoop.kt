@@ -93,9 +93,26 @@ class GenerationLoop(
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
 
+        val harness = settings.harness
+        val effectiveMaxSteps = if (harness.customEnabled) {
+            harness.maxSteps.coerceIn(1, 512)
+        } else {
+            maxSteps
+        }
+        val toolOutputLimit = if (harness.customEnabled) {
+            harness.toolOutputKb.coerceIn(4, 256) * 1024
+        } else {
+            MAX_TOOL_OUTPUT_CHARS
+        }
+        val maxRetries = if (harness.customEnabled) {
+            harness.networkRetries.coerceIn(0, 5)
+        } else {
+            MAX_PROVIDER_NETWORK_RETRIES
+        }
+
         var messages: List<UIMessage> = messages
 
-        for (stepIndex in 0 until maxSteps) {
+        for (stepIndex in 0 until effectiveMaxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
 
             // Check if we have tool calls ready to continue after user interaction.
@@ -268,7 +285,7 @@ class GenerationLoop(
                             val result = toolDef.execute(args)
                             val hasShellAccess = tools.any { it.name == "workspace_shell" }
                             executedTools += tool.copy(
-                                output = maybeTruncateToolOutput(tool, result, hasShellAccess)
+                                output = maybeTruncateToolOutput(tool, result, hasShellAccess, toolOutputLimit)
                             )
                         }.onFailure {
                             // 取消必须向上传播，否则停止生成会被误报为工具执行错误
@@ -379,6 +396,11 @@ class GenerationLoop(
         )
 
         var messages: List<UIMessage> = messages
+        val retryLimit = if (settings.harness.customEnabled) {
+            settings.harness.networkRetries.coerceIn(0, 5)
+        } else {
+            MAX_PROVIDER_NETWORK_RETRIES
+        }
         val params = TextGenerationParams(
             model = model,
             temperature = assistant.temperature,
@@ -446,6 +468,7 @@ class GenerationLoop(
                             retryCount = retryCount,
                             processingStatus = processingStatus,
                             enabled = settings.networkSetting.enableAutoRetry,
+                            maxRetries = retryLimit,
                         )
                     }
                 }
@@ -453,6 +476,7 @@ class GenerationLoop(
                 val result = executeProviderRequestWithRetry(
                     processingStatus = processingStatus,
                     enabled = settings.networkSetting.enableAutoRetry,
+                    maxRetries = retryLimit,
                 ) {
                     providerImpl.generateText(
                         providerSetting = provider,
@@ -471,6 +495,7 @@ class GenerationLoop(
     private suspend fun <T> executeProviderRequestWithRetry(
         processingStatus: MutableStateFlow<String?>,
         enabled: Boolean,
+        maxRetries: Int = MAX_PROVIDER_NETWORK_RETRIES,
         block: suspend () -> T,
     ): T {
         var retryCount = 0
@@ -483,6 +508,7 @@ class GenerationLoop(
                     retryCount = retryCount,
                     processingStatus = processingStatus,
                     enabled = enabled,
+                    maxRetries = maxRetries,
                 )
             }
         }
@@ -493,11 +519,12 @@ class GenerationLoop(
         retryCount: Int,
         processingStatus: MutableStateFlow<String?>,
         enabled: Boolean,
+        maxRetries: Int = MAX_PROVIDER_NETWORK_RETRIES,
     ): Int {
         // 用户主动停止生成时，底层连接也可能以 IOException("canceled") 收尾；
         // 先检查协程状态，确保取消不会被当作网络波动重新拉起。
         currentCoroutineContext().ensureActive()
-        if (!enabled || error !is IOException || retryCount >= MAX_PROVIDER_NETWORK_RETRIES) {
+        if (!enabled || error !is IOException || retryCount >= maxRetries) {
             throw error
         }
 
@@ -507,12 +534,12 @@ class GenerationLoop(
             R.string.chat_generation_network_retrying,
             getNetworkErrorMessage(error),
             nextRetryCount,
-            MAX_PROVIDER_NETWORK_RETRIES,
+            maxRetries,
         )
         Log.w(
             TAG,
             "Provider connection failed, retrying in ${retryDelay}ms " +
-                    "($nextRetryCount/$MAX_PROVIDER_NETWORK_RETRIES)",
+                    "($nextRetryCount/$maxRetries)",
             error,
         )
         delay(retryDelay)
@@ -533,6 +560,7 @@ class GenerationLoop(
         tool: UIMessagePart.Tool,
         output: List<UIMessagePart>,
         hasShellAccess: Boolean,
+        limitChars: Int = MAX_TOOL_OUTPUT_CHARS,
     ): List<UIMessagePart> {
         if (tool.toolName in TOOLS_WITHOUT_OUTPUT_TRUNCATION) return output
 
@@ -541,7 +569,7 @@ class GenerationLoop(
         val nonTextParts = output.filter { it !is UIMessagePart.Text }
         val totalChars = textParts.sumOf { it.text.length }
 
-        if (totalChars <= MAX_TOOL_OUTPUT_CHARS || !hasShellAccess) return output
+        if (totalChars <= limitChars || !hasShellAccess) return output
 
         Log.i(TAG, "maybeTruncateToolOutput: truncating tool $toolCallId output ($totalChars chars)")
 

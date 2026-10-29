@@ -100,3 +100,38 @@ val McpServerConfig.serverUrl: String
         is McpServerConfig.SseTransportServer -> url
         is McpServerConfig.StreamableHTTPServer -> url
     }
+
+/** MCP 名称会被拼进工具名（`mcp__<server>__<tool>`），因此只允许 ASCII 字母和数字。 */
+fun isValidMcpServerName(name: String): Boolean =
+    name.isNotEmpty() && name.all { it.isAsciiLetterOrDigit() }
+
+/**
+ * 把任意显示名规范成合法的 MCP 名称。
+ *
+ * 推荐商店里很多条目的名字是「DeepWiki」「MCP 官方示例服务器」这类展示名，
+ * 直接写进设置会导致详情页无法保存、聊天时工具名校验失败；安装时统一转换。
+ * 主名过滤后为空时退回 [fallback]（通常是条目 id），再为空则用 `MCPServer`。
+ */
+fun sanitizeMcpServerName(raw: String, fallback: String = "MCPServer"): String {
+    val primary = raw.filter { it.isAsciiLetterOrDigit() }.take(MAX_MCP_SERVER_NAME_LENGTH)
+    if (primary.isNotEmpty()) return primary
+    val secondary = fallback.filter { it.isAsciiLetterOrDigit() }.take(MAX_MCP_SERVER_NAME_LENGTH)
+    return secondary.ifEmpty { "MCPServer" }
+}
+
+/** 名称冲突时追加数字后缀（DeepWiki → DeepWiki2），避免覆盖用户已有的 server。 */
+fun uniqueMcpServerName(base: String, used: Collection<String>): String {
+    val normalized = sanitizeMcpServerName(base)
+    if (normalized !in used) return normalized
+    var index = 2
+    while (true) {
+        val candidate = "$normalized$index"
+        if (candidate !in used) return candidate
+        index++
+    }
+}
+
+private const val MAX_MCP_SERVER_NAME_LENGTH = 48
+
+private fun Char.isAsciiLetterOrDigit(): Boolean =
+    this in 'a'..'z' || this in 'A'..'Z' || this in '0'..'9'

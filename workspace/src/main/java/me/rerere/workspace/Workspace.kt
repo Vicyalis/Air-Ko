@@ -50,6 +50,8 @@ data class WorkspaceFileEntry(
     val isDirectory: Boolean,
     val sizeBytes: Long,
     val updatedAt: Long,
+    /** 符号链接不跟随，导出等操作需要显式跳过。 */
+    val isSymbolicLink: Boolean = false,
 )
 
 data class WorkspaceSearchMatch(

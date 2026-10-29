@@ -70,30 +70,6 @@ internal fun MediaFileInputRow(
 
     // 正在哪张图片上画，非空时显示画板
     val scope = rememberCoroutineScope()
-    var drawingOn by remember { mutableStateOf<UIMessagePart.Image?>(null) }
-    drawingOn?.let { part ->
-        SketchDialog(
-            image = part.url.toUri(),
-            onDismiss = { drawingOn = null },
-            onConfirm = { result ->
-                drawingOn = null
-                scope.launch {
-                    val uri = filesManager.createChatFileBySketch(result) ?: return@launch
-                    // 画好的图换掉原来那张，位置不变；等保存的这会儿原图已经被移走的话就不加了
-                    if (part !in state.messageContent) {
-                        filesManager.deleteChatFiles(listOf(uri))
-                        return@launch
-                    }
-                    state.messageContent = state.messageContent.map {
-                        if (it == part) UIMessagePart.Image(uri.toString()) else it
-                    }
-                    if (state.shouldDeleteFileOnRemove(part)) {
-                        filesManager.deleteChatFiles(listOf(part.url.toUri()))
-                    }
-                }
-            },
-        )
-    }
 
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -127,7 +103,6 @@ internal fun MediaFileInputRow(
                             }
                         },
                         onRemove = { removePart(part, part.url) },
-                        onClick = { drawingOn = part },
                     )
                 }
 

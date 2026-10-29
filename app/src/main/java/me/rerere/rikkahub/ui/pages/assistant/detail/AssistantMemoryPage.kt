@@ -57,7 +57,7 @@ import me.rerere.rikkahub.ui.components.ui.ItemAction
 import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
 import me.rerere.rikkahub.ui.components.ui.PagerTab
 import me.rerere.rikkahub.ui.components.ui.PagerTabs
-import me.rerere.rikkahub.ui.components.ui.RabbitLoadingIndicator
+import me.rerere.rikkahub.ui.components.ui.AirKoLoadingIndicator
 import me.rerere.rikkahub.ui.components.ui.switchItem
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.pages.memory.resultText
@@ -393,7 +393,7 @@ private fun MemoryConsolidationSection(
             supportingContent = { Text(memoryConsolidationSummary(status)) },
             trailingContent = {
                 if (status.running) {
-                    RabbitLoadingIndicator(modifier = Modifier.size(32.dp))
+                    AirKoLoadingIndicator(modifier = Modifier.size(32.dp))
                 } else {
                     FilledTonalButton(onClick = onOrganize) {
                         Text(

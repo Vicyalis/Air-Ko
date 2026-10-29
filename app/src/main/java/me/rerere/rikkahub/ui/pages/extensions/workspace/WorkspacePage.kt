@@ -272,18 +272,6 @@ private fun WorkspaceTerminalSettingsSheet(onDismiss: () -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                switchItem(
-                    checked = displaySetting.terminalPinAiSession,
-                    onCheckedChange = { checked ->
-                        updateDisplay { it.copy(terminalPinAiSession = checked) }
-                    },
-                    headlineContent = {
-                        Text(stringResource(R.string.workspace_terminal_settings_pin_ai_title))
-                    },
-                    supportingContent = {
-                        Text(stringResource(R.string.workspace_terminal_settings_pin_ai_desc))
-                    },
-                )
             }
             TextButton(
                 onClick = onDismiss,

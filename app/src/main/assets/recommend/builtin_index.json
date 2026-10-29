@@ -141,6 +141,7 @@
                       "source_url":  "https://mcp.deepwiki.com/mcp",
                       "sha256":  "",
                       "install_kind":  "remote",
+                      "mcp_transport":  "streamable_http",
                       "deps":  [
 
                                ],
@@ -161,6 +162,7 @@
                       "source_url":  "https://mcp.context7.com/mcp",
                       "sha256":  "",
                       "install_kind":  "remote",
+                      "mcp_transport":  "streamable_http",
                       "deps":  [
 
                                ],

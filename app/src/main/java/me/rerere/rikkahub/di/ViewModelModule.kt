@@ -10,7 +10,6 @@ import me.rerere.rikkahub.ui.pages.favorite.FavoriteVM
 import me.rerere.rikkahub.ui.pages.search.SearchVM
 import me.rerere.rikkahub.ui.pages.history.HistoryVM
 import me.rerere.rikkahub.ui.pages.stats.StatsVM
-import me.rerere.rikkahub.ui.pages.imggen.ImgGenVM
 import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationSessionsVM
 import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationVM
 import me.rerere.rikkahub.ui.pages.memory.MemoryFileVM
@@ -34,6 +33,7 @@ val viewModelModule = module {
     viewModel<ChatVM> { params ->
         ChatVM(
             id = params.get(),
+            temporary = params.get(),
             context = get(),
             settingsStore = get(),
             conversationRepo = get(),
@@ -41,6 +41,7 @@ val viewModelModule = module {
             updateChecker = get(),
             filesManager = get(),
             favoriteRepository = get(),
+            appScope = get(),
         )
     }
     viewModelOf(::ChatDrawerVM)
@@ -74,7 +75,6 @@ val viewModelModule = module {
         )
     }
     viewModelOf(::BackupVM)
-    viewModelOf(::ImgGenVM)
     viewModelOf(::MediaCreationSessionsVM)
     viewModel<MediaCreationVM> {
         MediaCreationVM(

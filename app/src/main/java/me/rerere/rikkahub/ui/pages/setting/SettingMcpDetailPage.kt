@@ -79,6 +79,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.mcp.McpTool
+import me.rerere.rikkahub.data.ai.mcp.isValidMcpServerName
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.PagerTab
 import me.rerere.rikkahub.ui.components.ui.PagerTabs
@@ -240,7 +241,7 @@ private fun McpBasicSettingsTab(
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
-    val canSave = draft.commonOptions.name.isNotBlank() && isValidMcpName(draft.commonOptions.name)
+    val canSave = draft.commonOptions.name.isNotBlank() && isValidMcpServerName(draft.commonOptions.name)
 
     Box(
         modifier = Modifier
@@ -378,7 +379,7 @@ private fun McpCommonOptionsConfigure(
                 Text(stringResource(R.string.setting_mcp_page_name_desc))
             }
         ) {
-            val nameInvalid = !isValidMcpName(config.commonOptions.name)
+            val nameInvalid = !isValidMcpServerName(config.commonOptions.name)
             OutlinedTextField(
                 value = config.commonOptions.name,
                 onValueChange = { name ->
@@ -775,8 +776,4 @@ private fun McpToolCard(
             }
         }
     }
-}
-
-private fun isValidMcpName(name: String): Boolean {
-    return name.isEmpty() || name.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
 }

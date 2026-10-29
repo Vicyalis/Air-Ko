@@ -25,6 +25,11 @@ class WorkspaceDesktopCatalogTest {
         assertEquals(WorkspaceDesktop.CODE_SERVER, WorkspaceDesktop.fromId("code-server"))
         assertEquals(WorkspaceDesktop.NOVNC, WorkspaceDesktop.fromId("novnc"))
         assertEquals(WorkspaceDesktop.JUPYTER, WorkspaceDesktop.fromId("jupyter"))
+        assertEquals(WorkspaceDesktop.GNOME, WorkspaceDesktop.fromId("gnome"))
+        assertEquals(WorkspaceDesktop.NIRI, WorkspaceDesktop.fromId("niri"))
+        assertEquals(WorkspaceDesktop.KDE, WorkspaceDesktop.fromId("kde"))
+        assertEquals(WorkspaceDesktop.CINNAMON, WorkspaceDesktop.fromId("cinnamon"))
+        assertEquals(WorkspaceDesktop.HYPRLAND, WorkspaceDesktop.fromId("hyprland"))
         assertEquals(WorkspaceDesktop.CUSTOM, WorkspaceDesktop.fromId("custom"))
         assertEquals(WorkspaceDesktop.NONE, WorkspaceDesktop.fromId("CODE_SERVER"))
         assertEquals(WorkspaceDesktop.NONE, WorkspaceDesktop.fromId(null))
@@ -38,6 +43,11 @@ class WorkspaceDesktopCatalogTest {
         assertEquals("code-server", WorkspaceDesktop.CODE_SERVER.id)
         assertEquals("novnc", WorkspaceDesktop.NOVNC.id)
         assertEquals("jupyter", WorkspaceDesktop.JUPYTER.id)
+        assertEquals("gnome", WorkspaceDesktop.GNOME.id)
+        assertEquals("niri", WorkspaceDesktop.NIRI.id)
+        assertEquals("kde", WorkspaceDesktop.KDE.id)
+        assertEquals("cinnamon", WorkspaceDesktop.CINNAMON.id)
+        assertEquals("hyprland", WorkspaceDesktop.HYPRLAND.id)
         assertEquals("custom", WorkspaceDesktop.CUSTOM.id)
         assertEquals(WorkspaceDesktop.entries.size, WorkspaceDesktop.entries.map { it.id }.toSet().size)
     }
@@ -329,8 +339,92 @@ class WorkspaceDesktopCatalogTest {
     }
 
     @Test
+    fun `kde and cinnamon plans use x11 vnc with per distro packages`() {
+        val kde = WorkspaceDesktopCatalog.plan(WorkspaceDesktop.KDE, WorkspacePackageManager.APT)!!
+        assertEquals(6080, kde.port)
+        assertEquals("http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale", kde.url)
+        assertNotNull(kde.sizeHintBytes)
+        assertNotNull(kde.installMinutes)
+        assertTrue(kde.installScript!!.contains("plasma-desktop"))
+        assertTrue(kde.installScript!!.contains("tigervnc-standalone-server"))
+        assertTrue(kde.installScript!!.contains("x11vnc"))
+        assertTrue(kde.installScript!!.contains("novnc"))
+        assertTrue(kde.installScript!!.contains("websockify"))
+        assertTrue(kde.startScript!!.contains("startplasma-x11"))
+        assertTrue(kde.startScript!!.contains("dbus-run-session"))
+        assertTrue(kde.startScript!!.contains("Xvnc"))
+        assertTrue(kde.startScript!!.contains("-localhost"))
+        assertTrue(kde.startScript!!.contains("127.0.0.1:6080"))
+        assertTrue(kde.startScript!!.contains("127.0.0.1:5900"))
+        assertTrue(kde.stopScript!!.contains("startplasma-x11"))
+        assertTrue(kde.stopScript!!.contains("airko-ws.py"))
+        assertTrue(kde.probeScript!!.contains("startplasma-x11"))
+
+        val cinnamon = WorkspaceDesktopCatalog.plan(WorkspaceDesktop.CINNAMON, WorkspacePackageManager.APT)!!
+        assertEquals(6080, cinnamon.port)
+        assertNotNull(cinnamon.sizeHintBytes)
+        assertNotNull(cinnamon.installMinutes)
+        assertTrue(cinnamon.installScript!!.contains("cinnamon cinnamon-session"))
+        assertTrue(cinnamon.installScript!!.contains("tigervnc-standalone-server"))
+        assertTrue(cinnamon.installScript!!.contains("novnc"))
+        assertTrue(cinnamon.installScript!!.contains("websockify"))
+        assertTrue(cinnamon.startScript!!.contains("cinnamon-session"))
+        assertTrue(cinnamon.startScript!!.contains("dbus-run-session"))
+        assertTrue(cinnamon.startScript!!.contains("127.0.0.1:6080"))
+        assertTrue(cinnamon.startScript!!.contains("127.0.0.1:5900"))
+        assertTrue(cinnamon.stopScript!!.contains("cinnamon-session"))
+        assertTrue(cinnamon.probeScript!!.contains("cinnamon-session"))
+
+        // Alpine 装不了 KDE/Cinnamon: 明确报错, 不让包管理器乱报
+        val kdeApk = WorkspaceDesktopCatalog.plan(WorkspaceDesktop.KDE, WorkspacePackageManager.APK)!!
+        assertTrue(kdeApk.installScript!!.contains("exit 1"))
+        val cinnamonApk = WorkspaceDesktopCatalog.plan(WorkspaceDesktop.CINNAMON, WorkspacePackageManager.APK)!!
+        assertTrue(cinnamonApk.installScript!!.contains("exit 1"))
+    }
+
+    @Test
+    fun `hyprland plan uses headless wayland with wayvnc`() {
+        val pacman = WorkspaceDesktopCatalog.plan(WorkspaceDesktop.HYPRLAND, WorkspacePackageManager.PACMAN)!!
+        assertEquals(6080, pacman.port)
+        assertEquals("http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale", pacman.url)
+        assertNotNull(pacman.sizeHintBytes)
+        assertNotNull(pacman.installMinutes)
+        assertTrue(pacman.installScript!!.contains("cage hyprland wayvnc"))
+        assertTrue(pacman.installScript!!.contains("wlr-randr"))
+        assertTrue(pacman.installScript!!.contains("foot"))
+        assertTrue(pacman.installScript!!.contains("novnc/noVNC/archive"))
+        assertTrue(pacman.startScript!!.contains("WLR_BACKENDS=headless"))
+        assertTrue(pacman.startScript!!.contains("nohup Hyprland"))
+        // 新版本走 Hyprland 自带 headless, 老版本退回 niri 同款 cage 包裹
+        assertTrue(pacman.startScript!!.contains("cage -- sleep infinity"))
+        assertTrue(pacman.startScript!!.contains("wayvnc"))
+        assertTrue(pacman.startScript!!.contains("XDG_RUNTIME_DIR=/run"))
+        assertTrue(pacman.startScript!!.contains("127.0.0.1:6080"))
+        assertTrue(pacman.startScript!!.contains("127.0.0.1:5900"))
+        assertTrue(pacman.stopScript!!.contains("Hyprland"))
+        assertTrue(pacman.stopScript!!.contains("wayvnc"))
+        assertTrue(pacman.stopScript!!.contains("cage"))
+        assertTrue(pacman.probeScript!!.contains("Hyprland"))
+        assertTrue(pacman.probeScript!!.contains("wayvnc"))
+
+        // apt 仓库没有 hyprland 时要明确提示, 而不是白下一趟
+        val apt = WorkspaceDesktopCatalog.plan(WorkspaceDesktop.HYPRLAND, WorkspacePackageManager.APT)!!
+        assertTrue(apt.installScript!!.contains("apt-cache policy hyprland"))
+        assertTrue(apt.installScript!!.contains("unavailable in this distro repo"))
+        val apk = WorkspaceDesktopCatalog.plan(WorkspaceDesktop.HYPRLAND, WorkspacePackageManager.APK)!!
+        assertTrue(apk.installScript!!.contains("exit 1"))
+    }
+
+    @Test
     fun `vnc schemes start websockify through the fork wrapper`() {
-        listOf(WorkspaceDesktop.NOVNC, WorkspaceDesktop.GNOME, WorkspaceDesktop.NIRI).forEach { desktop ->
+        listOf(
+            WorkspaceDesktop.NOVNC,
+            WorkspaceDesktop.GNOME,
+            WorkspaceDesktop.NIRI,
+            WorkspaceDesktop.KDE,
+            WorkspaceDesktop.CINNAMON,
+            WorkspaceDesktop.HYPRLAND,
+        ).forEach { desktop ->
             val plan = WorkspaceDesktopCatalog.plan(desktop, WorkspacePackageManager.APT)!!
             val start = plan.startScript!!
             // Python 3.14 的 forkserver 在 proot 里绑不上临时 socket, 必须强制 fork

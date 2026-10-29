@@ -58,6 +58,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -75,7 +78,11 @@ import me.rerere.rikkahub.data.ai.mcp.McpCommonOptions
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.mcp.McpStatus
+import me.rerere.rikkahub.data.ai.mcp.sanitizeMcpServerName
+import me.rerere.rikkahub.data.ai.mcp.uniqueMcpServerName
+import me.rerere.rikkahub.data.recommend.McpOAuthParseResult
 import me.rerere.rikkahub.data.recommend.RecommendType
+import me.rerere.rikkahub.data.recommend.parseMcpOAuthElement
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.ItemAction
 import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
@@ -206,8 +213,19 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
         McpImportModal(
             onDismiss = { showImportDialog = false },
             onImport = { newConfigs ->
-                val existingIds = mcpConfigs.map { it.commonOptions.name }.toSet()
-                val toAdd = newConfigs.filter { it.commonOptions.name.isNotBlank() && it.commonOptions.name !in existingIds }
+                // 导入的名称可能和已有 server 重名：自动追加数字后缀，
+                // 而不是把整条配置静默丢掉（旧实现会直接过滤掉）。
+                val usedNames = mcpConfigs.map { it.commonOptions.name }.toMutableSet()
+                val toAdd = newConfigs.mapNotNull { config ->
+                    if (config.commonOptions.name.isBlank()) return@mapNotNull null
+                    val name = uniqueMcpServerName(config.commonOptions.name, usedNames)
+                    usedNames += name
+                    if (name == config.commonOptions.name) {
+                        config
+                    } else {
+                        config.clone(commonOptions = config.commonOptions.copy(name = name))
+                    }
+                }
                 vm.updateSettings { it.copy(mcpServers = it.mcpServers + toAdd) }
                 showImportDialog = false
             }
@@ -399,14 +417,44 @@ private fun McpServerItem(
 private fun parseMcpServersFromJson(json: String): List<McpServerConfig> {
     val root = Json.parseToJsonElement(json).jsonObject
     val mcpServers = root["mcpServers"]?.jsonObject ?: return emptyList()
-    return mcpServers.entries.mapNotNull { (name, element) ->
-        val obj = element.jsonObject
-        val type = obj["type"]?.jsonPrimitive?.contentOrNull ?: "streamable_http"
-        val url = obj["url"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-        val headers = obj["headers"]?.jsonObject?.entries?.map { (k, v) ->
-            k to (v.jsonPrimitive.contentOrNull ?: "")
-        } ?: emptyList()
-        val commonOptions = McpCommonOptions(name = name, headers = headers)
+    val usedNames = mutableSetOf<String>()
+    return mcpServers.entries.mapNotNull { (rawName, element) ->
+        val obj = element as? JsonObject ?: return@mapNotNull null
+        // stdio 配置没有 url，本 App 只支持远程 HTTP，导入时直接跳过
+        val url = obj["url"]?.jsonPrimitive?.contentOrNull?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return@mapNotNull null
+        val type = obj["type"]?.jsonPrimitive?.contentOrNull
+            ?.trim()?.lowercase()?.replace('-', '_')
+        val headers = when (val headersElement = obj["headers"]) {
+            is JsonObject -> headersElement.entries.mapNotNull { (key, value) ->
+                val headerName = key.trim().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                val headerValue = (value as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                headerName to headerValue
+            }
+
+            is JsonArray -> headersElement.mapNotNull { item ->
+                val headerObj = item as? JsonObject ?: return@mapNotNull null
+                val headerName = headerObj["name"]?.jsonPrimitive?.contentOrNull?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: return@mapNotNull null
+                val headerValue = headerObj["value"]?.jsonPrimitive?.contentOrNull
+                    ?: headerObj["default"]?.jsonPrimitive?.contentOrNull
+                    ?: return@mapNotNull null
+                headerName to headerValue
+            }
+
+            else -> emptyList()
+        }
+        val oauth = when (val parsed = parseMcpOAuthElement(obj["oauth"] ?: obj["authorization"])) {
+            McpOAuthParseResult.Absent -> null
+            is McpOAuthParseResult.Parsed -> parsed.state
+            is McpOAuthParseResult.Invalid -> null
+        }
+        // 设置页只接受字母数字名称，导入时直接规范化，避免导入后无法保存
+        val name = uniqueMcpServerName(sanitizeMcpServerName(rawName), usedNames)
+        usedNames += name
+        val commonOptions = McpCommonOptions(name = name, headers = headers, oauth = oauth)
         when (type) {
             "sse" -> McpServerConfig.SseTransportServer(commonOptions = commonOptions, url = url)
             else -> McpServerConfig.StreamableHTTPServer(commonOptions = commonOptions, url = url)

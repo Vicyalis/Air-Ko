@@ -96,10 +96,10 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.uuid.Uuid
 
 @Composable
-fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
+fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, temporary: Boolean = false) {
     val vm: ChatVM = koinViewModel(
         parameters = {
-            parametersOf(id.toString())
+            parametersOf(id.toString(), temporary)
         }
     )
     val filesManager: FilesManager = koinInject()
@@ -113,8 +113,9 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
     val assistant by vm.assistant.collectAsStateWithLifecycle()
     val errors by vm.errors.collectAsStateWithLifecycle()
 
-    // 悬浮侧栏的开合状态（VS Code 式浮层）：大屏默认展开、窄屏默认收起
-    var drawerOpen by rememberSaveable { mutableStateOf(false) }
+    // 悬浮侧栏的开合状态（VS Code 式浮层）：大屏默认展开、窄屏默认收起。
+    // 不用 rememberSaveable：进程被系统回收后恢复成「打开」会像是自己滑出来的。
+    var drawerOpen by remember { mutableStateOf(false) }
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
@@ -525,7 +526,6 @@ private fun ChatFilesPickerSheet(
             onPickVideo = attachmentPickerActions.onPickVideo,
             onPickAudio = attachmentPickerActions.onPickAudio,
             onPickFile = attachmentPickerActions.onPickFile,
-            onSketch = attachmentPickerActions.onSketch,
             onStartVoiceMode = if (
                 setting.getSelectedASRProvider()?.supportsServerVadVoiceMode == true &&
                 voiceState.phase == VoicePhase.Off

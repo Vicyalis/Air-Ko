@@ -22,7 +22,7 @@ import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
 import me.rerere.rikkahub.data.ai.MemoryConsolidator
 import me.rerere.rikkahub.data.ai.TranslationHandler
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
-import me.rerere.rikkahub.data.remote.RikkaHubAPI
+import me.rerere.rikkahub.data.remote.AirKoAPI
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.remote.RemoteFileStore
 import me.rerere.rikkahub.data.sync.BackupManager
@@ -288,7 +288,7 @@ val dataSourceModule = module {
             .build()
     }
 
-    single<RikkaHubAPI> {
-        get<Retrofit>().create(RikkaHubAPI::class.java)
+    single<AirKoAPI> {
+        get<Retrofit>().create(AirKoAPI::class.java)
     }
 }

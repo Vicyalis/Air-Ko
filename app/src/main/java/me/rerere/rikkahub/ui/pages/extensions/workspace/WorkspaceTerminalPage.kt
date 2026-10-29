@@ -87,15 +87,12 @@ fun WorkspaceTerminalPage(id: String) {
         root?.let { sessionManager.ensureSession(it, shellCompatibilityMode) }
     }
 
-    val settings = LocalSettings.current
-
     RikkahubTheme(colorMode = ColorMode.DARK) {
         Scaffold { innerPadding ->
             WorkspaceTerminalContent(
                 root = root,
                 state = terminalState,
                 contentPadding = innerPadding,
-                pinAiSession = settings.displaySetting.terminalPinAiSession,
                 onCreateTab = { root?.let { sessionManager.createTab(it, shellCompatibilityMode) } },
                 onSelectTab = { tabId ->
                     root?.let { sessionManager.selectTab(it, tabId) }
@@ -147,19 +144,12 @@ private fun WorkspaceTerminalContent(
     root: String?,
     state: WorkspaceTerminalTabsState,
     contentPadding: PaddingValues,
-    pinAiSession: Boolean,
     onCreateTab: () -> Unit,
     onSelectTab: (Long) -> Unit,
     onCloseTab: (Long) -> Unit,
 ) {
-    // AI 会话置顶：多标签页时一眼能看到 AI 在哪个会话里敲命令
-    val tabs = remember(state.tabs, pinAiSession) {
-        if (pinAiSession) {
-            state.tabs.sortedWith(compareBy({ if (it.isAi) 0 else 1 }, { it.number }))
-        } else {
-            state.tabs
-        }
-    }
+    // 终端只展示用户自己的标签页；AI 的后台会话不出现在这里
+    val tabs = state.tabs.filterNot { it.isAi }
     val selectedIndex = tabs.indexOfFirst { it.id == state.selectedTabId }
         .takeIf { it >= 0 }
         ?: 0
@@ -198,13 +188,7 @@ private fun WorkspaceTerminalContent(
                                     R.string.workspace_terminal_tab,
                                     tab.number,
                                 )
-                                // AI 会话的标签页标题由 shell 通过 OSC 报上来（通常是 cwd），
-                                // 那看不出它是 AI 的会话；这里固定成一眼可辨的名字
-                                val tabTitle = if (tab.isAi) {
-                                    stringResource(R.string.workspace_terminal_ai_tab)
-                                } else {
-                                    tab.title ?: tabDescription
-                                }
+                                val tabTitle = tab.title ?: tabDescription
                                 val isSelected = selectedTab.id == tab.id
                                 Tab(
                                     selected = isSelected,
@@ -223,13 +207,6 @@ private fun WorkspaceTerminalContent(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
-                                        if (tab.isAi) {
-                                            Icon(
-                                                imageVector = HugeIcons.Sparkles,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(16.dp),
-                                            )
-                                        }
                                         Text(
                                             text = tabTitle,
                                             modifier = Modifier

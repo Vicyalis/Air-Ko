@@ -242,12 +242,27 @@ fun RecommendListPage(
 
                 if (feed.skippedCount > 0) {
                     item(key = "skipped") {
-                        Text(
-                            text = stringResource(R.string.wp9_list_skipped_notice, feed.skippedCount),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        Column(
                             modifier = Modifier.padding(horizontal = 4.dp),
-                        )
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.wp9_list_skipped_notice, feed.skippedCount),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            // 具体原因（字段缺失、地址非法、sha256 格式错误等）直接摆出来，
+                            // 否则用户只会看到「N 条被跳过」，根本不知道哪条坏了、为什么坏。
+                            feed.skippedEntries.take(5).forEach { skipped ->
+                                val label = skipped.name.ifBlank { skipped.id }.ifBlank { "?" }
+                                Text(
+                                    text = "• $label：${skipped.reason}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 8.dp),
+                                )
+                            }
+                        }
                     }
                 }
 

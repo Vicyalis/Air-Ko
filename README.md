@@ -1,14 +1,50 @@
-Android 端 LLM 聊天客户端，基于 <a href="https://github.com/rikkahub/rikkahub">RikkaHub</a>（AGPL-3.0）的衍生分支。
-</div>
+# Air-Ko
 
-## 这是什么
+Android 上的 LLM 聊天客户端，基于 [RikkaHub](https://github.com/rikkahub/rikkahub)（AGPL-3.0）的衍生分支。
 
-Air-Ko 是基于 [RikkaHub](https://github.com/rikkahub/rikkahub) , [Tinycontainer](https://github.com/Cateners/tiny_container),  [Reticle](https://github.com/Bumfuzzle-app/reticle)的 Android 端 LLM 聊天客户端衍生版。保留上游的全部能力（多服务商接入、助手系统、MCP、技能、工作区、桌面容器、设备控制、语音等），
-并在其上做了这些改动：
+工作区设计参考 [TinyContainer](https://github.com/Cateners/tiny_container)，设备控制参考 [Reticle](https://github.com/Bumfuzzle-app/reticle)，统计计价参考 Reasonix。保留上游全部能力，并在此基础上做了这些改造。
 
-- **全新优化后的Linux工作区**：工作区支持更全面的Linux， 可以自由选择自己偏好的Distribution，同样提供了niri， gnome等作为桌面下载使用，也可以装Code-server作为便携式的安卓编辑器。
-- **手机控制**：通过无障碍权限和Shizuku来操控手机，灵感来源于Reticle，更为流畅地用ai控制手机。
-- **统计与花费**：定点金额、缓存节省、覆盖率提示、模型价格自定义（最长通配匹配），灵感来源于Reasonix。
+## 核心特性
+
+### 对话
+
+- **悬浮式侧边栏**：VS Code 风格浮层，收起后在对话界面右滑即可拉出；面板左滑、点遮罩或按返回键收起；大屏默认展开、窄屏默认收起。
+- **树状分支**：重新生成、编辑重发都会产生可切换的候选分支，历史不会丢。
+- **临时对话**：一键开始，不写入聊天记录，退出即清理。
+- 消息导出、收藏、翻译、朗读、全文搜索。
+
+### 助手与提示词
+
+- 助手系统：系统提示词、生成参数、自定义请求头、正则输出替换、任务模型（标题 / 建议 / 翻译 / OCR / 压缩）。
+- 快捷消息、提示词注入 / Lorebook、技能（SKILL.md，按需加载）。
+- **应用语言**：跟随系统，或手动选择简体中文、繁體中文、English、日本語、한국어、Русский、العربية。
+
+### 模型与工具
+
+- 多服务商：OpenAI 兼容（Chat Completions / Responses）、Anthropic、Google，支持自定义 Base URL、Header、代理与多 Key 轮换。
+- MCP：SSE / Streamable HTTP 传输、OAuth 授权、工具审批与调用。
+- 联网搜索：19 家服务商，可自建 SearXNG 或接入自定义 JS 引擎。
+
+### Linux 工作区与桌面
+
+- proot 沙箱 Linux，多发行版（Alpine / Ubuntu / Debian / Arch / Fedora / NixOS），内置终端、文件管理与包管理器。
+- **桌面方案**：GNOME、niri、KDE Plasma、Cinnamon、Hyprland，以及 noVNC、code-server、JupyterLab。
+- 桌面**默认全屏**、**点击即开**；可设置启动时直接进入桌面 / 终端，并选择具体工作区。
+- 工作区文件可**导出到 Android 公共目录**（默认 `/sdcard/Air-Ko!`，目录名与位置可修改）。
+
+### 手机与语音
+
+- 设备控制：无障碍 + Shizuku，默认逐次审批；支持「允许所有权限」与操作审计。
+- 语音：5 家 ASR、12 家 TTS，支持语音模式与自动朗读。
+
+### 统计与数据
+
+- 统计与花费：定点金额（1e-9）、缓存节省、覆盖率提示、自定义模型价格（最长通配匹配）。
+- 备份 / 恢复，WebDAV 与 S3 同步。
+
+### Harness
+
+- **可调 Harness**：工具循环步数、单次工具输出上限、网络重试次数。默认关闭；开启前会弹出警告，并需等待 5 秒才能确认。
 
 ## 下载
 
@@ -24,8 +60,7 @@ Air-Ko 是基于 [RikkaHub](https://github.com/rikkahub/rikkahub) , [Tinycontain
 
 ## 构建
 
-环境要求：JDK 17+（CI 使用 JetBrains Runtime 21）、Android SDK（compileSdk 37）、
-Node 22 + pnpm 11（web-ui 前端子构建需要）。
+环境要求：JDK 17+（CI 使用 JetBrains Runtime 21）、Android SDK（compileSdk 37）、Node 22 + pnpm 11（web-ui 前端子构建需要）。
 
 ```shell
 # Debug 构建（产出 app/build/outputs/apk/debug/）
