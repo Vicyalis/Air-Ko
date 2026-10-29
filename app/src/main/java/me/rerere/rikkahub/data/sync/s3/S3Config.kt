@@ -41,5 +41,8 @@ data class S3Config(
     enum class BackupItem {
         DATABASE,
         FILES,
+
+        /** 终端工作区信息与 /workspace 用户文件 (rootfs 不打包, 恢复时按发行版重新下载) */
+        TERMINAL,
     }
 }

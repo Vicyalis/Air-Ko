@@ -68,6 +68,7 @@ import me.rerere.rikkahub.data.db.MigrationState
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.repository.MediaCreationRepository
+import me.rerere.rikkahub.data.sync.terminal.TerminalRestoreManager
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.device.DeviceControlPrefs
 import me.rerere.rikkahub.device.DeviceControlWatchdogService
@@ -97,9 +98,11 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantMemoryPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantPromptPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantRequestPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
+import me.rerere.rikkahub.ui.pages.backup.components.TerminalRestoreOverlay
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
 import me.rerere.rikkahub.ui.pages.debug.DebugPage
 import me.rerere.rikkahub.ui.pages.extensions.PromptPage
+import me.rerere.rikkahub.ui.pages.extensions.plugins.PluginsPage
 import me.rerere.rikkahub.ui.pages.extensions.QuickMessagesPage
 import me.rerere.rikkahub.ui.pages.extensions.recommend.RecommendDetailPage
 import me.rerere.rikkahub.ui.pages.extensions.recommend.RecommendInstallPage
@@ -307,6 +310,12 @@ class RouteActivity : ComponentActivity() {
             }
         }
         val migrationState by DatabaseMigrationTracker.state.collectAsStateWithLifecycle()
+        val terminalRestoreManager: TerminalRestoreManager = koinInject()
+        val terminalRestoreState by terminalRestoreManager.state.collectAsStateWithLifecycle()
+        LaunchedEffect(Unit) {
+            // 备份恢复后（下次启动）自动重建终端与桌面，并显示全屏进度
+            terminalRestoreManager.startIfNeeded()
+        }
 
         // 没走完引导就先停引导页，配好模型服务再进主界面
         val chatScreen = {
@@ -605,6 +614,10 @@ class RouteActivity : ComponentActivity() {
                                 SkillsPage()
                             }
 
+                            entry<Screen.Plugins> {
+                                PluginsPage()
+                            }
+
                             entry<Screen.Workspaces> {
                                 WorkspacePage()
                             }
@@ -614,7 +627,7 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.WorkspaceDesktop> { key ->
-                                WorkspaceDesktopPage(key.id)
+                                WorkspaceDesktopPage(key.id, key.conversationId)
                             }
 
                             entry<Screen.WorkspaceTerminal> { key ->
@@ -697,6 +710,12 @@ class RouteActivity : ComponentActivity() {
                     Toaster(
                         state = toastState,
                         modifier = Modifier.align(Alignment.TopCenter),
+                    )
+                    TerminalRestoreOverlay(
+                        state = terminalRestoreState,
+                        onDismiss = { terminalRestoreManager.skip() },
+                        onRetry = terminalRestoreManager::retry,
+                        onSkip = terminalRestoreManager::skip,
                     )
                 }
             }
@@ -861,13 +880,16 @@ sealed interface Screen : NavKey {
     data object Skills : Screen
 
     @Serializable
+    data object Plugins : Screen
+
+    @Serializable
     data object Workspaces : Screen
 
     @Serializable
     data class WorkspaceDetail(val id: String) : Screen
 
     @Serializable
-    data class WorkspaceDesktop(val id: String) : Screen
+    data class WorkspaceDesktop(val id: String, val conversationId: String = "") : Screen
 
     @Serializable
     data class WorkspaceTerminal(val id: String) : Screen

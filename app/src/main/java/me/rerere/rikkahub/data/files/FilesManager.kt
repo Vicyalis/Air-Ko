@@ -518,6 +518,7 @@ object FileFolders {
     const val UPLOAD = "upload"
     const val SKILLS = "skills"
     const val BUILTIN_SKILLS = "builtin_skills"
+    const val PLUGINS = "plugins"
     const val FONTS = "fonts"
     const val SIDEBAR = "sidebar"
     const val TOOL_OUTPUTS = "tool_outputs"

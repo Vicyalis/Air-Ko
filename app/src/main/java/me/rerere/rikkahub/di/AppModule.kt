@@ -5,6 +5,7 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
 import me.rerere.rikkahub.data.event.AppEventBus
+import me.rerere.rikkahub.data.sync.terminal.TerminalRestoreManager
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.MediaCreationService
@@ -64,6 +65,17 @@ val appModule = module {
             repository = get(),
             appScope = get(),
             okHttpClient = get(),
+        )
+    }
+
+    // 备份恢复后的终端重建 (rootfs + 桌面 + /workspace 文件), 由 RouteActivity 调 startIfNeeded()
+    single {
+        TerminalRestoreManager(
+            context = get(),
+            repository = get(),
+            desktopManager = get(),
+            appScope = get(),
+            json = get(),
         )
     }
 

@@ -190,6 +190,9 @@ class SettingsStore internal constructor(
         // 模型价格覆盖
         val MODEL_PRICE_OVERRIDES = stringPreferencesKey("model_price_overrides")
 
+        // Air-Ko 插件（文件在 filesDir/plugins，这里只存启用状态）
+        val ENABLED_PLUGIN_IDS = stringPreferencesKey("enabled_plugin_ids")
+
 val STARTUP_TARGET = stringPreferencesKey("startup_target")
 
         // Uses the same DataStore singleton without starting settings flows or requiring Koin.

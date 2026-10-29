@@ -285,8 +285,10 @@ class WorkspaceManager(
     }
 
     companion object {
-        private const val FILES_DIR = "files"
-        private const val LINUX_DIR = "linux"
+        /** 工作区根目录名 (context.filesDir 下); 备份等跨模块代码复用它, 避免目录名漂移 */
+        const val BASE_DIR_NAME = "workspaces"
+        const val FILES_DIR = "files"
+        const val LINUX_DIR = "linux"
         private const val TEMP_DIR = "tmp"
         const val DEFAULT_COMMAND_TIMEOUT_MS = 30_000L
 

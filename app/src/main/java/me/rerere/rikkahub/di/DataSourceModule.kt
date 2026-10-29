@@ -132,6 +132,7 @@ val dataSourceModule = module {
             context = get(),
             providerManager = get(),
             json = get(),
+            pluginManager = get(),
         )
     }
 

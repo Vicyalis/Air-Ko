@@ -214,6 +214,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_mcp)) },
                     )
                     item(
+                        onClick = { navController.navigate(Screen.Plugins) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Puzzle, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.plugins_intro_desc)) },
+                        headlineContent = { Text(stringResource(R.string.plugins_page_title)) },
+                    )
+                    item(
                         onClick = { navController.navigate(Screen.SettingDeviceControl) },
                         leadingContent = { CardGroupIcon(HugeIcons.SmartPhone01, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_device_control_desc)) },

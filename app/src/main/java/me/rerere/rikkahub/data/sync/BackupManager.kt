@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.sync
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -21,10 +22,18 @@ import me.rerere.rikkahub.data.datastore.migration.SettingsJsonMigrator
 import me.rerere.rikkahub.data.db.AppDatabaseFactory
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.SQLiteConfiguration
+import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.MediaCreationFiles
+import me.rerere.rikkahub.data.sync.terminal.TerminalBackup
+import me.rerere.rikkahub.data.sync.terminal.TerminalDistroDetector
+import me.rerere.rikkahub.data.sync.terminal.TerminalRestoreStore
+import me.rerere.rikkahub.data.sync.terminal.TerminalWorkspaceInfo
+import me.rerere.workspace.WorkspaceManager
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.nio.file.Files
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -41,7 +50,11 @@ class BackupManager(
 ) {
     private val restoreMutex = Mutex()
 
-    suspend fun createBackup(includeDatabase: Boolean, includeFiles: Boolean): File = withContext(Dispatchers.IO) {
+    suspend fun createBackup(
+        includeDatabase: Boolean,
+        includeFiles: Boolean,
+        includeTerminal: Boolean = false,
+    ): File = withContext(Dispatchers.IO) {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
         val archive = File.createTempFile("backup_${timestamp}_", ".zip", context.cacheDir)
         val staging = Files.createTempDirectory(context.cacheDir.toPath(), "backup-").toFile()
@@ -74,6 +87,9 @@ class BackupManager(
                         }
                     }
                 }
+                if (includeTerminal) {
+                    writeTerminalBackup(zip)
+                }
             }
             archive
         } catch (e: Throwable) {
@@ -84,38 +100,188 @@ class BackupManager(
         }
     }
 
-    suspend fun stageRestore(archive: File, includeDatabase: Boolean, includeFiles: Boolean) =
+    /**
+     * 终端工作区元数据 + /workspace 用户文件。
+     *
+     * rootfs 本身不进包 (动辄几百 MB); 恢复时按 distroId 重新下载同一发行版。
+     * 超过数量/体积上限时只跳过剩余文件, 元数据仍然保留, 避免一个超大文件导致整个备份失败。
+     */
+    private suspend fun writeTerminalBackup(zip: ZipOutputStream) {
+        val workspaces = database.workspaceDao().getAll()
+            .filter { TerminalRestoreStore.isValidWorkspaceId(it.id) }
+        val infos = workspaces.map { it.toTerminalInfo() }
+        zip.putNextEntry(ZipEntry(TerminalBackup.ARCHIVE_WORKSPACES))
+        zip.write(json.encodeToString(infos).toByteArray(Charsets.UTF_8))
+        zip.closeEntry()
+
+        var fileCount = 0
+        var totalBytes = 0L
+        var limitLogged = false
+        for (workspace in workspaces) {
+            if (!TerminalRestoreStore.isValidWorkspaceId(workspace.id)) {
+                Log.w(TAG, "Skip terminal backup for invalid workspace id: ${workspace.id}")
+                continue
+            }
+            val filesDir = workspaceFilesDir(workspace.root) ?: continue
+            if (!filesDir.isDirectory) continue
+            val files = filesDir.walkTopDown()
+                .onEnter { dir ->
+                    dir == filesDir || (!Files.isSymbolicLink(dir.toPath()) &&
+                        dir.name != TERMINAL_SKIP_DIR)
+                }
+                .filter { it.isFile && !Files.isSymbolicLink(it.toPath()) }
+            for (file in files) {
+                currentCoroutineContext().ensureActive()
+                val length = file.length()
+                if (fileCount >= TerminalBackup.MAX_FILES ||
+                    length > TerminalBackup.MAX_FILE_BYTES ||
+                    totalBytes + length > TerminalBackup.MAX_TOTAL_BYTES
+                ) {
+                    if (!limitLogged) {
+                        Log.w(TAG, "Terminal backup limit reached; remaining files are skipped")
+                        limitLogged = true
+                    }
+                    continue
+                }
+                val relative = file.relativeTo(filesDir).invariantSeparatorsPath
+                PendingRestore.resolveInside(filesDir, relative)
+                addFile(
+                    zip,
+                    file,
+                    "${TerminalBackup.ARCHIVE_FILES_PREFIX}${workspace.id}/$relative",
+                )
+                fileCount++
+                totalBytes += length
+            }
+        }
+    }
+
+    private fun WorkspaceEntity.toTerminalInfo(): TerminalWorkspaceInfo = TerminalWorkspaceInfo(
+        id = id,
+        name = name,
+        root = root,
+        desktop = desktop,
+        desktopCustomCommand = desktopCustomCommand,
+        desktopCustomPort = desktopCustomPort,
+        shellCompatibilityMode = shellCompatibilityMode,
+        distroId = workspaceLinuxDir(root)?.let { TerminalDistroDetector.detect(it) },
+    )
+
+    private fun workspaceBaseDir(root: String): File? {
+        if (!TerminalRestoreStore.isValidWorkspaceId(root)) return null
+        return File(File(context.filesDir, WorkspaceManager.BASE_DIR_NAME), root)
+    }
+
+    private fun workspaceFilesDir(root: String): File? =
+        workspaceBaseDir(root)?.let { File(it, WorkspaceManager.FILES_DIR) }
+
+    private fun workspaceLinuxDir(root: String): File? =
+        workspaceBaseDir(root)?.let { File(it, WorkspaceManager.LINUX_DIR) }
+
+    suspend fun stageRestore(
+        archive: File,
+        includeDatabase: Boolean,
+        includeFiles: Boolean,
+        includeTerminal: Boolean = false,
+    ) =
         withContext(Dispatchers.IO) {
+            check(!TerminalRestoreStore.isRestoring.get()) {
+                "A terminal restore is already running"
+            }
             restoreMutex.withLock {
                 val restore = pendingRestore(context)
+                val terminalStore = TerminalRestoreStore(context)
                 val staging = restore.createStagingDirectory()
+                val terminalStaging = try {
+                    if (includeTerminal) terminalStore.createStagingDirectory() else null
+                } catch (e: Throwable) {
+                    staging.deleteRecursively()
+                    throw e
+                }
                 try {
                     val payload = File(staging, "payload")
                     val stagedDatabase = File(payload, "database/${SQLiteConfiguration.DATABASE_NAME}")
                     val stagedWal = File(stagedDatabase.path + "-wal")
                     val seen = mutableSetOf<String>()
                     var restoredEntries = 0
+                    var terminalEntries = 0
+                    var terminalBytes = 0L
                     ZipFile(archive).use { zip ->
                         for (entry in zip.entries()) {
                             currentCoroutineContext().ensureActive()
                             if (entry.isDirectory) continue
+                            if (includeTerminal && entry.name.startsWith("terminal/")) {
+                                require(TerminalRestoreStore.isTerminalEntry(entry.name)) {
+                                    "Invalid terminal backup entry: ${entry.name}"
+                                }
+                            }
+                            val isTerminal =
+                                includeTerminal && TerminalRestoreStore.isTerminalEntry(entry.name)
                             val target = when (entry.name) {
                                 "settings.json" -> File(staging, "settings.json")
                                 DatabaseBackup.ARCHIVE_DATABASE -> if (includeDatabase) stagedDatabase else null
                                 DatabaseBackup.WAL -> if (includeDatabase) stagedWal else null
                                 DatabaseBackup.SHM -> null // Rebuilt by SQLite; never restore shared-memory state.
-                                else -> if (includeFiles && isAttachment(entry.name)) {
-                                    PendingRestore.resolveInside(File(payload, "files"), entry.name)
-                                } else null
+                                else -> when {
+                                    isTerminal -> TerminalRestoreStore.resolveEntry(
+                                        requireNotNull(terminalStaging),
+                                        entry.name,
+                                    )
+
+                                    includeFiles && isAttachment(entry.name) ->
+                                        PendingRestore.resolveInside(File(payload, "files"), entry.name)
+
+                                    else -> null
+                                }
                             } ?: continue
                             require(seen.add(entry.name)) { "Duplicate backup entry: ${entry.name}" }
                             check(target.parentFile!!.isDirectory || target.parentFile!!.mkdirs()) {
                                 "Cannot create backup staging directory"
                             }
-                            zip.getInputStream(entry).use { input ->
-                                FileOutputStream(target).use { output ->
-                                    input.copyTo(output)
-                                    output.fd.sync()
+                            if (isTerminal) {
+                                terminalEntries++
+                                require(terminalEntries <= TerminalBackup.MAX_FILES) {
+                                    "Too many terminal files in the backup"
+                                }
+                                val entryLimit = if (entry.name == TerminalBackup.ARCHIVE_WORKSPACES) {
+                                    TerminalBackup.MAX_METADATA_BYTES
+                                } else {
+                                    TerminalBackup.MAX_FILE_BYTES
+                                }
+                                val declaredSize = entry.size
+                                if (declaredSize >= 0) {
+                                    require(declaredSize <= entryLimit) {
+                                        "Terminal backup entry is too large: ${entry.name}"
+                                    }
+                                }
+                                val previousBytes = terminalBytes
+                                terminalBytes += declaredSize.coerceAtLeast(0)
+                                require(terminalBytes <= TerminalBackup.MAX_TOTAL_BYTES) {
+                                    "Terminal backup is too large"
+                                }
+                                zip.getInputStream(entry).use { input ->
+                                    FileOutputStream(target).use { output ->
+                                        val copied = copyLimited(
+                                            input = input,
+                                            output = output,
+                                            maxBytes = minOf(
+                                                entryLimit,
+                                                TerminalBackup.MAX_TOTAL_BYTES - previousBytes,
+                                            ),
+                                        )
+                                        terminalBytes = previousBytes + copied
+                                        require(terminalBytes <= TerminalBackup.MAX_TOTAL_BYTES) {
+                                            "Terminal backup is too large"
+                                        }
+                                        output.fd.sync()
+                                    }
+                                }
+                            } else {
+                                zip.getInputStream(entry).use { input ->
+                                    FileOutputStream(target).use { output ->
+                                        input.copyTo(output)
+                                        output.fd.sync()
+                                    }
                                 }
                             }
                             restoredEntries++
@@ -144,12 +310,47 @@ class BackupManager(
                         PendingRestore.writeDurably(settingsFile, json.encodeSettings(settings, json.launchCountOf(migrated)))
                     }
                     currentCoroutineContext().ensureActive()
-                    restore.publish(staging)
+
+                    // 终端标记独立于 PendingRestore.pending: applyPendingRestore 完成后 pending 会被删掉。
+                    val terminalMarker = terminalStaging?.let {
+                        TerminalRestoreStore.buildMarker(it, json)
+                    }
+                    if (terminalMarker != null) {
+                        terminalStore.publish(terminalStaging!!)
+                        try {
+                            terminalStore.writeMarker(json, terminalMarker)
+                        } catch (e: Throwable) {
+                            terminalStore.clearPending()
+                            throw e
+                        }
+                    }
+                    try {
+                        restore.publish(staging)
+                    } catch (e: Throwable) {
+                        if (terminalMarker != null) terminalStore.clearPending()
+                        throw e
+                    }
+                    // 备份里没有终端数据 (旧备份 / 未勾选) 时, 清掉上一次遗留的待恢复标记。
+                    if (terminalMarker == null) terminalStore.clearPending()
                 } finally {
                     staging.deleteRecursively()
+                    terminalStaging?.deleteRecursively()
                 }
             }
         }
+
+    private fun copyLimited(input: InputStream, output: OutputStream, maxBytes: Long): Long {
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            total += read
+            require(total <= maxBytes) { "Terminal backup entry is too large" }
+            output.write(buffer, 0, read)
+        }
+        return total
+    }
 
     private fun isAttachment(name: String): Boolean {
         val folder = name.substringBefore('/')
@@ -167,6 +368,11 @@ class BackupManager(
     }
 
     companion object {
+        private const val TAG = "BackupManager"
+
+        /** 桌面安装脚本目录, 属于应用生成内容, 不随终端备份导出 */
+        private const val TERMINAL_SKIP_DIR = ".airko"
+
         private val ATTACHMENT_FOLDERS =
             listOf(FileFolders.UPLOAD, FileFolders.SKILLS, FileFolders.FONTS, FileFolders.MEDIA_CREATION)
 

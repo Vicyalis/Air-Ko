@@ -7,12 +7,20 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -56,6 +64,7 @@ import me.rerere.hugeicons.stroke.ComputerDesk01
 import me.rerere.hugeicons.stroke.Earth
 import me.rerere.hugeicons.stroke.Fullscreen
 import me.rerere.hugeicons.stroke.Minimize01
+import me.rerere.hugeicons.stroke.MessageAdd01
 import me.rerere.hugeicons.stroke.Refresh01
 import me.rerere.hugeicons.stroke.Stop
 import me.rerere.rikkahub.R
@@ -77,7 +86,7 @@ import org.koin.compose.koinInject
  * 等于把一个可执行的浏览器交给外部站点, 所以外链一律转交系统浏览器。
  */
 @Composable
-fun WorkspaceDesktopPage(id: String) {
+fun WorkspaceDesktopPage(id: String, conversationId: String = "") {
     val manager: WorkspaceDesktopManager = koinInject()
     val repository: WorkspaceRepository = koinInject()
     val uriHandler = LocalUriHandler.current
@@ -96,9 +105,14 @@ fun WorkspaceDesktopPage(id: String) {
     var fullscreen by remember(id) {
         mutableStateOf(settings.displaySetting.desktopFullscreenByDefault)
     }
+    // 桌面上的下拉悬浮聊天（类似 PC QQ）：默认 Pin 住，取消后点桌面即收起
+    var chatPanelVisible by remember(id) { mutableStateOf(false) }
+    var chatPinned by remember(id) { mutableStateOf(true) }
 
     // 全屏时返回键先退出全屏, 而不是直接离开页面
     BackHandler(enabled = fullscreen) { fullscreen = false }
+    // 悬浮聊天打开时，返回键先收起聊天
+    BackHandler(enabled = chatPanelVisible) { chatPanelVisible = false }
 
     // 全屏 = 连系统栏一起藏起来; 退出全屏或离开页面时都要放回来
     val view = LocalView.current
@@ -154,6 +168,13 @@ fun WorkspaceDesktopPage(id: String) {
                     },
                     navigationIcon = { BackButton() },
                     actions = {
+                        // 下拉悬浮聊天：半全屏时和其他按钮放在一起
+                        IconButton(onClick = { chatPanelVisible = true }) {
+                            Icon(
+                                HugeIcons.MessageAdd01,
+                                contentDescription = stringResource(R.string.desktop_floating_chat),
+                            )
+                        }
                         if (webUrl != null) {
                             IconButton(
                                 onClick = {
@@ -264,6 +285,50 @@ fun WorkspaceDesktopPage(id: String) {
                         contentDescription = stringResource(R.string.wp5_desktop_page_exit_fullscreen),
                     )
                 }
+            }
+
+            // 全屏时聊天按钮放左上角，和退出全屏按钮正好对应
+            if (fullscreen) {
+                FilledTonalIconButton(
+                    onClick = { chatPanelVisible = true },
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp),
+                ) {
+                    Icon(
+                        HugeIcons.MessageAdd01,
+                        contentDescription = stringResource(R.string.desktop_floating_chat),
+                    )
+                }
+            }
+
+            // 未 Pin 时，点桌面任意位置收起聊天
+            if (chatPanelVisible && !chatPinned) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { chatPanelVisible = false }
+                )
+            }
+
+            AnimatedVisibility(
+                visible = chatPanelVisible,
+                enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter),
+            ) {
+                DesktopFloatingChatPanel(
+                    conversationId = conversationId,
+                    pinned = chatPinned,
+                    onPinnedChange = { chatPinned = it },
+                    onDismiss = { chatPanelVisible = false },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.62f),
+                )
             }
         }
     }

@@ -104,6 +104,9 @@ data class Settings(
     val startupWorkspaceId: String = "",
     /** Harness 调参（默认关闭，保持内置行为） */
     val harness: HarnessSetting = HarnessSetting(),
+
+    /** 已启用的 Air-Ko 插件 id；插件文件在 filesDir/plugins/<id>.json */
+    val enabledPluginIds: Set<String> = emptySet(),
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储
@@ -264,6 +267,9 @@ data class WebDavConfig(
     enum class BackupItem {
         DATABASE,
         FILES,
+
+        /** 终端工作区信息与 /workspace 用户文件 (rootfs 不打包, 恢复时按发行版重新下载) */
+        TERMINAL,
     }
 }
 

@@ -172,6 +172,8 @@ class MemoryConsolidator(
             maxSteps = MAX_STEPS,
             // 只用来当请求的会话 ID：整次整理的每一步用同一个，服务端才能命中前面几步的缓存
             conversationId = Uuid.random(),
+            // 记忆整理是内部生成，不叠加用户启用的聊天插件提示词
+            includePlugins = false,
         ).collect { chunk ->
             when (chunk) {
                 is GenerationChunk.Messages -> messages = chunk.messages

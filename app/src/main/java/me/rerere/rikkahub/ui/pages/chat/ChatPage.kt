@@ -72,7 +72,10 @@ import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
 import me.rerere.rikkahub.ui.components.ai.SearchMode
+import me.rerere.rikkahub.data.skills.SkillManager
+import me.rerere.rikkahub.data.plugin.PluginManager
 import me.rerere.rikkahub.ui.components.ai.completion.WorkspaceCompletionProvider
+import me.rerere.rikkahub.ui.components.ai.completion.buildMentionCompletionProviders
 import me.rerere.rikkahub.ui.components.ai.rememberChatAttachmentPickerActions
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
@@ -268,8 +271,25 @@ private fun ChatPageContent(
     val allowAudioVideoAttachments =
         currentChatModel?.findProvider(setting.providers) is ProviderSetting.Google
 
-    val completionProviders = remember(assistant.workspaceId, conversation.workspaceCwd, workspaceRepository) {
-        assistant.workspaceId?.let { workspaceId ->
+    val skillManager: SkillManager = koinInject()
+    val pluginManager: PluginManager = koinInject()
+    val installedPlugins by pluginManager.installed.collectAsStateWithLifecycle()
+    val completionProviders = remember(
+        assistant.workspaceId,
+        conversation.workspaceCwd,
+        workspaceRepository,
+        setting.mcpServers,
+        setting.modeInjections,
+        setting.lorebooks,
+        setting.quickMessages,
+        assistant.quickMessageIds,
+        assistant.enabledSkills,
+        assistant.mcpServers,
+        conversation.modeInjectionIds,
+        conversation.lorebookIds,
+        installedPlugins,
+    ) {
+        val workspaceProviders = assistant.workspaceId?.let { workspaceId ->
             listOf(
                 WorkspaceCompletionProvider(
                     workspaceId = workspaceId.toString(),
@@ -278,6 +298,40 @@ private fun ChatPageContent(
                 )
             )
         }.orEmpty()
+        workspaceProviders + buildMentionCompletionProviders(
+            settings = setting,
+            assistant = assistant,
+            conversation = conversation,
+            skillManager = skillManager,
+            plugins = installedPlugins,
+            onEnableSkill = { name ->
+                vm.updateAssistant(assistant.copy(enabledSkills = assistant.enabledSkills + name))
+            },
+            onEnableMcp = { serverId ->
+                vm.updateAssistant(assistant.copy(mcpServers = assistant.mcpServers + serverId))
+            },
+            onEnablePlugin = { pluginId ->
+                vm.updateSettings { it.copy(enabledPluginIds = it.enabledPluginIds + pluginId) }
+            },
+            onToggleModeInjection = { injectionId ->
+                val ids = if (injectionId in conversation.modeInjectionIds) {
+                    conversation.modeInjectionIds - injectionId
+                } else {
+                    conversation.modeInjectionIds + injectionId
+                }
+                vm.updateConversation(conversation.copy(modeInjectionIds = ids))
+                vm.saveConversationAsync()
+            },
+            onToggleLorebook = { lorebookId ->
+                val ids = if (lorebookId in conversation.lorebookIds) {
+                    conversation.lorebookIds - lorebookId
+                } else {
+                    conversation.lorebookIds + lorebookId
+                }
+                vm.updateConversation(conversation.copy(lorebookIds = ids))
+                vm.saveConversationAsync()
+            },
+        )
     }
 
     TTSAutoPlay(vm = vm, setting = setting, conversation = conversation)
@@ -641,7 +695,14 @@ private fun TopBar(
             // 工作区桌面入口: 没配桌面方案的工作区不占用顶栏位置
             if (boundWorkspaceId != null && boundDesktop != WorkspaceDesktop.NONE) {
                 IconButton(
-                    onClick = { navController.navigate(Screen.WorkspaceDesktop(boundWorkspaceId)) }
+                    onClick = {
+                        navController.navigate(
+                            Screen.WorkspaceDesktop(
+                                boundWorkspaceId,
+                                conversationId = conversation.id.toString(),
+                            )
+                        )
+                    }
                 ) {
                     Icon(HugeIcons.ComputerDesk01, stringResource(R.string.wp5_chat_open_desktop))
                 }

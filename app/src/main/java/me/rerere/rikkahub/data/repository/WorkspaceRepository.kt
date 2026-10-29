@@ -4,6 +4,8 @@ import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
@@ -23,8 +25,10 @@ import me.rerere.workspace.WorkspaceManager
 import me.rerere.workspace.WorkspaceShellStatus
 import me.rerere.workspace.WorkspaceStorageArea
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.file.Files
 import kotlin.uuid.Uuid
 
 class WorkspaceRepository(
@@ -86,6 +90,129 @@ class WorkspaceRepository(
         manager.ensureWorkspace(workspace.root)
         dao.upsert(workspace)
         return workspace
+    }
+
+    /**
+     * 终端备份恢复专用: 用备份里的 id/root 重建工作区, 这样即使没有恢复数据库,
+     * 设置里保存的 workspaceId 和备份里的文件目录也能对上。
+     */
+    suspend fun createRestored(
+        id: String,
+        name: String,
+        root: String,
+        desktop: WorkspaceDesktop = WorkspaceDesktop.NONE,
+        desktopCustomCommand: String = "",
+        desktopCustomPort: Int = 0,
+        shellCompatibilityMode: Boolean = false,
+    ): WorkspaceEntity {
+        require(id.matches(RESTORED_ROOT_REGEX) && id != "." && id != "..") {
+            "Invalid workspace id: $id"
+        }
+        dao.getById(id)?.let { return it }
+
+        val usedRoots = dao.getAll().map { it.root }.toSet()
+        val finalRoot = sequenceOf(root, id, "${id}_restored", "${id}_${System.currentTimeMillis()}")
+            .map { it.trim() }
+            .firstOrNull {
+                it.matches(RESTORED_ROOT_REGEX) && it != "." && it != ".." && it !in usedRoots
+            }
+            ?: error("Cannot allocate a workspace directory")
+
+        val now = System.currentTimeMillis()
+        val workspace = WorkspaceEntity(
+            id = id,
+            name = uniqueRestoredName(name, id),
+            root = finalRoot,
+            createdAt = now,
+            updatedAt = now,
+            shellCompatibilityMode = shellCompatibilityMode,
+            desktop = desktop.id,
+            desktopCustomCommand = desktopCustomCommand.trim(),
+            desktopCustomPort = normalizedDesktopPort(desktopCustomPort),
+        )
+        manager.ensureWorkspace(workspace.root)
+        dao.upsert(workspace)
+        return workspace
+    }
+
+    private suspend fun uniqueRestoredName(name: String, id: String): String {
+        val base = name.trim().ifBlank { "Workspace" }.take(128)
+        val candidates = sequenceOf(
+            base,
+            "$base (restored)",
+            "$base (${id.take(8)})",
+            "$base ${System.currentTimeMillis()}",
+        )
+        return candidates.firstOrNull { !isNameTaken(it, excludeId = id) } ?: base
+    }
+
+    /**
+     * 把备份 staging 里的文件树复制回工作区的 /workspace 目录。
+     *
+     * 路径逐层校验, 跳过符号链接; 每 8KB 检查一次协程取消, 大文件也能及时中断。
+     */
+    suspend fun restoreWorkspaceFiles(
+        id: String,
+        sourceRoot: File,
+        onProgress: (copiedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> },
+    ): Int = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.ensureWorkspace(workspace.root)
+        val targetRoot = manager.filesDir(workspace.root)
+        val files = if (sourceRoot.isDirectory) {
+            sourceRoot.walkTopDown()
+                .onEnter { dir ->
+                    dir == sourceRoot || (!Files.isSymbolicLink(dir.toPath()) &&
+                        dir.name != RESTORE_SKIP_DIR)
+                }
+                .filter { it.isFile && !Files.isSymbolicLink(it.toPath()) }
+                .toList()
+        } else {
+            emptyList()
+        }
+
+        val totalBytes = files.sumOf { it.length() }
+        var copiedBytes = 0L
+        files.forEach { source ->
+            currentCoroutineContext().ensureActive()
+            val relative = source.relativeTo(sourceRoot).invariantSeparatorsPath
+            val target = resolveRestoredFile(targetRoot, relative)
+            if (Files.isSymbolicLink(target.toPath())) {
+                target.delete()
+            }
+            check(target.parentFile?.let { it.isDirectory || it.mkdirs() } == true) {
+                "Cannot create workspace directory: $relative"
+            }
+            source.inputStream().buffered().use { input ->
+                target.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        output.write(buffer, 0, read)
+                        copiedBytes += read
+                        onProgress(copiedBytes, totalBytes)
+                    }
+                }
+            }
+        }
+        files.size
+    }
+
+    private fun resolveRestoredFile(root: File, relativePath: String): File {
+        require(
+            relativePath.isNotBlank() && !relativePath.startsWith('/') &&
+                '\\' !in relativePath &&
+                relativePath.split('/').none { it == ".." || it == "." }
+        ) {
+            "Invalid workspace file path: $relativePath"
+        }
+        val target = File(root, relativePath).canonicalFile
+        require(target.path.startsWith(root.canonicalPath + File.separator)) {
+            "Workspace file is outside its directory"
+        }
+        return target
     }
 
     suspend fun rename(id: String, name: String): Boolean {
@@ -444,5 +571,11 @@ class WorkspaceRepository(
     companion object {
         private const val TAG = "WorkspaceRepository"
         private const val MAX_PREVIEW_BYTES = 512L * 1024
+
+        /** 与 WorkspaceManager 的 root 校验保持一致 */
+        private val RESTORED_ROOT_REGEX = Regex("[A-Za-z0-9._-]+")
+
+        /** 桌面安装脚本目录, 恢复用户文件时不能覆盖 */
+        private const val RESTORE_SKIP_DIR = ".airko"
     }
 }

@@ -36,6 +36,7 @@ import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
 import me.rerere.rikkahub.data.files.FileFolders
+import me.rerere.rikkahub.data.plugin.PluginManager
 import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
@@ -74,6 +75,7 @@ class GenerationLoop(
     private val context: Context,
     private val providerManager: ProviderManager,
     private val json: Json,
+    private val pluginManager: PluginManager,
 ) {
     fun generateText(
         settings: Settings,
@@ -89,6 +91,8 @@ class GenerationLoop(
         conversationSystemPrompt: String? = null,
         conversationId: Uuid? = null,
         workspaceCwd: String? = null,
+        // 是否把已启用插件的提示词拼进系统提示词；记忆整理这类内部生成应传 false
+        includePlugins: Boolean = true,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
@@ -111,6 +115,13 @@ class GenerationLoop(
         }
 
         var messages: List<UIMessage> = messages
+
+        // 插件提示词整轮生成只读一次；没有启用插件时 buildPromptSection 直接返回空串，不碰磁盘
+        val pluginPrompt = if (includePlugins) {
+            pluginManager.buildPromptSection(settings.enabledPluginIds)
+        } else {
+            ""
+        }
 
         for (stepIndex in 0 until effectiveMaxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -154,6 +165,7 @@ class GenerationLoop(
                     provider = provider,
                     tools = tools,
                     memories = memories ?: emptyList(),
+                    pluginPrompt = pluginPrompt,
                     stream = assistant.streamOutput,
                     processingStatus = processingStatus,
                     conversationSystemPrompt = conversationSystemPrompt,
@@ -352,6 +364,7 @@ class GenerationLoop(
         provider: ProviderSetting,
         tools: List<Tool>,
         memories: List<MemoryFile>,
+        pluginPrompt: String,
         stream: Boolean,
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
         conversationSystemPrompt: String? = null,
@@ -379,6 +392,10 @@ class GenerationLoop(
                 tools.forEach { tool ->
                     appendLine()
                     append(tool.systemPrompt(model, messages))
+                }
+                // 插件提示词：空 prompt / 坏文件已在 buildPromptSection 里跳过
+                if (pluginPrompt.isNotBlank()) {
+                    append(pluginPrompt)
                 }
             }
             if (system.isNotBlank()) {

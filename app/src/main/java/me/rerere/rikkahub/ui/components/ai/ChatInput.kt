@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -71,6 +72,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -503,6 +509,10 @@ private fun TextInputRow(
         var isFocused by remember { mutableStateOf(false) }
         var isFullScreen by remember { mutableStateOf(false) }
         var completionList by remember { mutableStateOf<ChatCompletionList?>(null) }
+        var completionSelection by remember { mutableStateOf(0) }
+        LaunchedEffect(completionList) {
+            completionSelection = 0
+        }
         val receiveContentListener = remember(
             settings.displaySetting.pasteLongTextAsFile, settings.displaySetting.pasteLongTextThreshold
         ) {
@@ -582,8 +592,10 @@ private fun TextInputRow(
         completionList?.takeIf { it.items.isNotEmpty() }?.let { list ->
             CompletionPopup(
                 completionList = list,
+                selectedIndex = completionSelection.coerceIn(0, list.items.lastIndex),
                 onItemClick = { item ->
                     state.applyCompletion(list.replacementRange, item)
+                    item.onSelected?.invoke()
                     completionList = null
                 },
             )
@@ -597,6 +609,35 @@ private fun TextInputRow(
                 .contentReceiver(receiveContentListener)
                 .onFocusChanged {
                     isFocused = it.isFocused
+                }
+                .onPreviewKeyEvent { event ->
+                    val list = completionList
+                    if (list == null || list.items.isEmpty() || event.type != KeyEventType.KeyDown) {
+                        false
+                    } else {
+                        when (event.key) {
+                            Key.DirectionUp -> {
+                                completionSelection =
+                                    (completionSelection - 1 + list.items.size) % list.items.size
+                                true
+                            }
+
+                            Key.DirectionDown -> {
+                                completionSelection = (completionSelection + 1) % list.items.size
+                                true
+                            }
+
+                            Key.Enter, Key.NumPadEnter -> {
+                                val item = list.items[completionSelection.coerceIn(0, list.items.lastIndex)]
+                                state.applyCompletion(list.replacementRange, item)
+                                item.onSelected?.invoke()
+                                completionList = null
+                                true
+                            }
+
+                            else -> false
+                        }
+                    }
                 },
             shape = MaterialTheme.shapes.largeIncreased,
             placeholder = {
@@ -608,7 +649,13 @@ private fun TextInputRow(
                 imeAction = if (settings.displaySetting.sendOnEnter) ImeAction.Send else ImeAction.Default
             ),
             onKeyboardAction = {
-                if (settings.displaySetting.sendOnEnter && !state.isEmpty()) {
+                val list = completionList
+                if (list != null && list.items.isNotEmpty()) {
+                    val item = list.items[completionSelection.coerceIn(0, list.items.lastIndex)]
+                    state.applyCompletion(list.replacementRange, item)
+                    item.onSelected?.invoke()
+                    completionList = null
+                } else if (settings.displaySetting.sendOnEnter && !state.isEmpty()) {
                     onSendMessage()
                 }
             },
@@ -650,6 +697,7 @@ private fun TextInputRow(
 @Composable
 private fun CompletionPopup(
     completionList: ChatCompletionList,
+    selectedIndex: Int,
     onItemClick: (ChatCompletionItem) -> Unit,
 ) {
     Surface(
@@ -666,14 +714,18 @@ private fun CompletionPopup(
                 .fillMaxWidth()
                 .padding(vertical = 4.dp),
         ) {
-            items(
+            itemsIndexed(
                 items = completionList.items,
-                key = { item -> "${item.label}:${item.insertText}" },
-            ) { item ->
+                key = { _, item -> "${item.label}:${item.insertText}" },
+            ) { index, item ->
                 Surface(
                     onClick = { onItemClick(item) },
                     modifier = Modifier.fillMaxWidth(),
-                    color = Color.Transparent,
+                    color = if (index == selectedIndex) {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    } else {
+                        Color.Transparent
+                    },
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),

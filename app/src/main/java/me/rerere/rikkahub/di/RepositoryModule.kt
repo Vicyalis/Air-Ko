@@ -3,6 +3,7 @@ package me.rerere.rikkahub.di
 import android.content.Context
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.plugin.PluginManager
 import me.rerere.rikkahub.data.skills.SkillManager
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FavoriteRepository
@@ -65,7 +66,7 @@ val repositoryModule = module {
             nativeLibraryDir = File(context.applicationInfo.nativeLibraryDir),
         )
         WorkspaceManager(
-            baseDir = File(context.filesDir, "workspaces"),
+            baseDir = File(context.filesDir, WorkspaceManager.BASE_DIR_NAME),
             // socket 短路径绑定用 (见 WorkspaceRuntimeBinds), cacheDir 宿主路径最短
             runtimeBaseDir = context.cacheDir,
             shellRunner = WorkspaceResidentShellRunner(
@@ -108,6 +109,16 @@ val repositoryModule = module {
 
     single {
         SkillManager(get(), get())
+    }
+
+    // Air-Ko 插件：filesDir/plugins 下的 JSON 提示词包，启用状态存 Settings
+    single {
+        PluginManager(
+            context = get(),
+            client = get(),
+            settingsStore = get(),
+            appScope = get(),
+        )
     }
 
     // 推荐商店：源配置、index 拉取（带缓存兜底）、安装器

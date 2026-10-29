@@ -18,11 +18,14 @@ import me.rerere.rikkahub.data.files.saveUploadFromBytes
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.sync.importer.ChatboxImporter
 import me.rerere.rikkahub.data.sync.importer.CherryStudioProviderImporter
+import me.rerere.rikkahub.data.sync.terminal.TerminalRestoreManager
+import me.rerere.rikkahub.data.sync.terminal.TerminalRestoreState
 import me.rerere.rikkahub.data.sync.webdav.WebDavBackupItem
 import me.rerere.rikkahub.data.sync.webdav.WebDavSync
 import me.rerere.rikkahub.data.sync.S3BackupItem
 import me.rerere.rikkahub.data.sync.S3Sync
 import me.rerere.rikkahub.utils.UiState
+import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 
 private const val TAG = "BackupVM"
@@ -33,6 +36,7 @@ class BackupVM(
     private val s3Sync: S3Sync,
     private val conversationRepository: ConversationRepository,
     private val filesManager: FilesManager,
+    private val terminalRestoreManager: TerminalRestoreManager,
 ) : ViewModel() {
     val settings = settingsStore.settingsFlow.stateIn(
         scope = viewModelScope,
@@ -42,7 +46,14 @@ class BackupVM(
 
     val webDavBackupItems = MutableStateFlow<UiState<List<WebDavBackupItem>>>(UiState.Idle)
     val s3BackupItems = MutableStateFlow<UiState<List<S3BackupItem>>>(UiState.Idle)
-    val localBackupItems = MutableStateFlow(WebDavConfig.BackupItem.entries.toList())
+
+    // 终端信息默认不勾选, 保持和旧版本一致
+    val localBackupItems = MutableStateFlow(
+        listOf(WebDavConfig.BackupItem.DATABASE, WebDavConfig.BackupItem.FILES)
+    )
+
+    /** 备份恢复后的终端重建进度, 供全屏进度层收集 */
+    val terminalRestoreState: StateFlow<TerminalRestoreState> = terminalRestoreManager.state
 
     init {
         loadBackupFileItems()
@@ -58,6 +69,14 @@ class BackupVM(
     fun updateLocalBackupItems(items: List<WebDavConfig.BackupItem>) {
         localBackupItems.value = items
     }
+
+    fun startTerminalRestoreIfNeeded() = terminalRestoreManager.startIfNeeded()
+
+    fun retryTerminalRestore() = terminalRestoreManager.retry()
+
+    fun skipTerminalRestore() = terminalRestoreManager.skip()
+
+    fun dismissTerminalRestore() = terminalRestoreManager.dismiss()
 
     fun loadBackupFileItems() {
         viewModelScope.launch {

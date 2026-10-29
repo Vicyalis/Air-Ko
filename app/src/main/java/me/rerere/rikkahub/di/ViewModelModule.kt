@@ -15,6 +15,7 @@ import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationVM
 import me.rerere.rikkahub.ui.pages.memory.MemoryFileVM
 import me.rerere.rikkahub.ui.pages.extensions.PromptVM
 import me.rerere.rikkahub.ui.pages.extensions.QuickMessagesVM
+import me.rerere.rikkahub.ui.pages.extensions.plugins.PluginsVM
 import me.rerere.rikkahub.ui.pages.extensions.recommend.RecommendInstallVM
 import me.rerere.rikkahub.ui.pages.extensions.recommend.RecommendListVM
 import me.rerere.rikkahub.ui.pages.extensions.recommend.RecommendSourcesVM
@@ -90,6 +91,7 @@ val viewModelModule = module {
     viewModelOf(::PromptVM)
     viewModelOf(::QuickMessagesVM)
     viewModelOf(::SkillsVM)
+    viewModelOf(::PluginsVM)
     viewModelOf(::SkillDetailVM)
     viewModelOf(::RecommendListVM)
     viewModelOf(::RecommendSourcesVM)

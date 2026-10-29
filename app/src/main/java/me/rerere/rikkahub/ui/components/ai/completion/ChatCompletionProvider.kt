@@ -23,6 +23,8 @@ data class ChatCompletionItem(
     val detail: String? = null,
     val icon: ImageVector? = null,
     val sortScore: Int = 0,
+    /** 选中后的副作用（启用技能/MCP/插件、切换注入等）；插入文本仍由 [insertText] 完成 */
+    val onSelected: (() -> Unit)? = null,
 )
 
 interface ChatCompletionProvider {

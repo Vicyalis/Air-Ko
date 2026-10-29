@@ -169,13 +169,55 @@ class WorkspaceDesktopManager internal constructor(
 
     /** 安装桌面: 在 rootfs 内下载/装包, 实时把安装日志尾巴推给 UI */
     fun install(workspaceId: String) = launchAction(workspaceId, WorkspaceDesktopAction.INSTALL) {
+        performInstall(workspaceId)
+    }
+
+    /**
+     * 供终端备份恢复使用: 在当前协程里直接安装并等待结果。
+     *
+     * 与 [install] 的区别是不占 AppScope 的 actionJobs, 调用方可以按「rootfs -> 桌面 -> 文件」
+     * 的顺序串行恢复, 同时照常通过 [observe] 拿到安装日志和下载进度。
+     */
+    suspend fun installNow(workspaceId: String): WorkspaceDesktopFailure? {
+        if (actionJobs[workspaceId]?.isActive == true) {
+            return WorkspaceDesktopFailure(WorkspaceDesktopFailure.Kind.COMMAND_FAILED)
+        }
+        updateState(workspaceId) {
+            it.copy(busy = WorkspaceDesktopAction.INSTALL, failure = null, download = null)
+        }
+        var failure: WorkspaceDesktopFailure? = null
+        try {
+            failure = performInstall(workspaceId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Log.e(TAG, "Desktop install failed: workspace=$workspaceId", error)
+            failure = WorkspaceDesktopFailure(WorkspaceDesktopFailure.Kind.COMMAND_FAILED)
+        } finally {
+            updateState(workspaceId) {
+                it.copy(busy = null, download = null, failure = failure)
+            }
+            if (currentCoroutineContext().isActive) {
+                try {
+                    probeNow(workspaceId)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    Log.e(TAG, "Probe after install failed: workspace=$workspaceId", error)
+                }
+            }
+        }
+        return failure
+    }
+
+    private suspend fun performInstall(workspaceId: String): WorkspaceDesktopFailure? {
         if (!repository.hasRootfs(workspaceId)) {
-            return@launchAction WorkspaceDesktopFailure(WorkspaceDesktopFailure.Kind.ROOTFS_MISSING)
+            return WorkspaceDesktopFailure(WorkspaceDesktopFailure.Kind.ROOTFS_MISSING)
         }
         val plan = repository.desktopPlan(workspaceId)
         val script = plan?.installScript
         if (plan == null || script == null) {
-            return@launchAction WorkspaceDesktopFailure(WorkspaceDesktopFailure.Kind.NOT_CONFIGURED)
+            return WorkspaceDesktopFailure(WorkspaceDesktopFailure.Kind.NOT_CONFIGURED)
         }
 
         val poller = appScope.launch { pollInstallLog(workspaceId) }
@@ -194,7 +236,7 @@ class WorkspaceDesktopManager internal constructor(
 
         val logTail = readInstallLog(workspaceId)
         if (result.exitCode != 0) {
-            return@launchAction WorkspaceDesktopFailure(
+            return WorkspaceDesktopFailure(
                 kind = WorkspaceDesktopFailure.Kind.INSTALL_FAILED,
                 exitCode = result.exitCode,
                 timedOut = result.timedOut,
@@ -204,12 +246,12 @@ class WorkspaceDesktopManager internal constructor(
 
         // 脚本报成功不算数: 必须真的探测到 (例如 code-server 缺 glibc 兼容层时能装上却起不来)
         if (plan.probeScript != null && !probeInstalled(workspaceId, plan)) {
-            return@launchAction WorkspaceDesktopFailure(
+            return WorkspaceDesktopFailure(
                 kind = WorkspaceDesktopFailure.Kind.PROBE_FAILED,
                 logTail = readInstallLog(workspaceId) ?: logTail,
             )
         }
-        null
+        return null
     }
 
     /** 取消正在进行的安装 (用户显式操作) */
