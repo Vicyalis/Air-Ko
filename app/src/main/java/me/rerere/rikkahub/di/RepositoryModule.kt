@@ -140,6 +140,7 @@ val repositoryModule = module {
             client = get(),
             skillManager = get(),
             settingsStore = get(),
+            pluginManager = get(),
         )
     }
 }

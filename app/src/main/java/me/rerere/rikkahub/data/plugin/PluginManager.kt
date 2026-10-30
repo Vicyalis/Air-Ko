@@ -83,7 +83,6 @@ private const val MAX_NAME_LENGTH = 120
 private const val MAX_VERSION_LENGTH = 32
 private const val MAX_AUTHOR_LENGTH = 120
 private const val MAX_DESCRIPTION_LENGTH = 1_000
-private const val MAX_PROMPT_LENGTH = 64_000
 private const val MAX_HOMEPAGE_LENGTH = 2_048
 
 /**
@@ -137,9 +136,6 @@ private fun PluginManifest.validated(): PluginManifest {
         }
     }
     val trimmedPrompt = prompt.trim()
-    if (trimmedPrompt.length > MAX_PROMPT_LENGTH) {
-        throw PluginException(PluginErrorReason.TOO_LARGE, "prompt is too long")
-    }
     return copy(
         id = trimmedId,
         name = trimmedName,
@@ -190,12 +186,25 @@ class PluginManager(
 
     /**
      * 读取插件目录并按启用状态合并。坏文件会被跳过，错误记录在 [loadErrors]。
-     * 只有设置里的启用集合变化或文件增删时才会重新读盘。
+     * 启用集合变化、安装/删除插件或手动 [refresh] 时重新读盘。
      */
     fun listFlow(): Flow<List<InstalledPlugin>> =
-        combine(revision, settingsStore.settingsFlow) { _, settings -> settings.enabledPluginIds }
-            .distinctUntilChanged()
-            .map { enabledIds -> readInstalled(enabledIds) }
+        combine(
+            revision,
+            settingsStore.settingsFlow.map { it.enabledPluginIds }.distinctUntilChanged(),
+        ) { _, enabledIds -> enabledIds }
+            .map { enabledIds ->
+                try {
+                    readInstalled(enabledIds)
+                } catch (e: Exception) {
+                    // 目录级失败（权限、IO）不能让整个收集器挂掉
+                    Log.e(TAG, "listFlow: failed to read plugin directory", e)
+                    _loadErrors.value = listOf(
+                        PluginLoadError("plugins", e.message ?: e::class.java.simpleName)
+                    )
+                    emptyList<InstalledPlugin>()
+                }
+            }
             .flowOn(Dispatchers.IO)
 
     init {
@@ -215,7 +224,11 @@ class PluginManager(
         return dir
     }
 
-    fun pluginFile(id: String): File = pluginsDir().resolve("$id.json")
+    fun pluginFile(id: String): File {
+        // id 直接拼进文件名，调用方漏校验时也不能让路径穿越发生
+        require(PLUGIN_ID_REGEX.matches(id)) { "Invalid plugin id: $id" }
+        return pluginsDir().resolve("$id.json")
+    }
 
     /** 从 URL 下载并安装。只接受 http/https，响应体超过 [MAX_PLUGIN_BYTES] 直接失败。 */
     suspend fun installFromUrl(url: String): Result<InstalledPlugin> = try {
@@ -235,6 +248,26 @@ class PluginManager(
         Result.failure(e)
     }
 
+    /**
+     * 从 assets 安装内置移植插件（插件商店的 DeepSeek 条目）。
+     *
+     * 资源随 APK 打包，不依赖网络；[assetPath] 由商店条目硬编码，不接受外部输入。
+     */
+    suspend fun installFromAsset(assetPath: String): Result<InstalledPlugin> = try {
+        val text = withContext(Dispatchers.IO) {
+            val bytes = appContext.assets.open(assetPath).use { it.readBytes() }
+            if (bytes.size > MAX_PLUGIN_BYTES) {
+                throw PluginException(PluginErrorReason.TOO_LARGE, "Plugin manifest is larger than 256 KB")
+            }
+            bytes.toString(Charsets.UTF_8)
+        }
+        Result.success(installText(text))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        Result.failure(e)
+    }
+
     /** 删除插件文件并清理启用状态。文件本来就不存在时也会清理残留 id。 */
     suspend fun delete(id: String): Boolean = withContext(Dispatchers.IO) {
         if (!PLUGIN_ID_REGEX.matches(id)) return@withContext false
@@ -243,7 +276,11 @@ class PluginManager(
         if (deleted) {
             revision.value++
             settingsStore.update { settings ->
-                settings.copy(enabledPluginIds = settings.enabledPluginIds - id)
+                if (id !in settings.enabledPluginIds) {
+                    settings
+                } else {
+                    settings.copy(enabledPluginIds = settings.enabledPluginIds - id)
+                }
             }
         } else {
             Log.w(TAG, "delete: failed to delete ${file.absolutePath}")
@@ -355,7 +392,10 @@ class PluginManager(
     private fun readInstalled(enabledIds: Set<String>): List<InstalledPlugin> {
         val dir = pluginsDir()
         val files = dir.listFiles { file -> file.isFile && file.name.endsWith(".json") }
-            ?: return emptyList()
+        if (files == null) {
+            _loadErrors.value = emptyList()
+            return emptyList()
+        }
         val errors = mutableListOf<PluginLoadError>()
         val plugins = files.mapNotNull { file ->
             try {

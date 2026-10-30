@@ -50,19 +50,20 @@ class RecommendBuiltinIndexTest {
     }
 
     @Test
-    fun `bundled index covers all four categories`() {
+    fun `bundled index covers the four offline categories`() {
         val entries = (parseRecommendIndex(
             builtinIndexFile().readText(Charsets.UTF_8),
             originId = "builtin",
             originName = "builtin",
         ) as RecommendIndexParseResult.Success).entries
 
+        // PLUGIN 不放在离线 index 里：DSH 插件来自远端目录，且安装前必须显示兼容性。
         assertEquals(
             setOf(RecommendType.SKILL, RecommendType.PROMPT, RecommendType.QUICK_MESSAGE, RecommendType.MCP),
             entries.map { it.type }.toSet(),
         )
         // 每个类目至少两条，列表页才不至于空荡
-        RecommendType.entries.forEach { type ->
+        listOf(RecommendType.SKILL, RecommendType.PROMPT, RecommendType.QUICK_MESSAGE, RecommendType.MCP).forEach { type ->
             assertTrue("$type 条目不足", entries.count { it.type == type } >= 2)
         }
     }

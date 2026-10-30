@@ -15,7 +15,7 @@ class RecommendSourceRulesTest {
     ) = RecommendSource(id = id, name = name, url = url, builtin = false, local = false, enabled = enabled)
 
     @Test
-    fun `default sources contain the offline local source plus the two real remote sources`() {
+    fun `default sources contain the offline local source plus four real remote sources`() {
         val sources = RecommendSourceRules.defaultSources()
 
         val local = sources.first()
@@ -27,11 +27,15 @@ class RecommendSourceRulesTest {
         assertEquals(RecommendSourceFormat.NATIVE, local.format)
 
         val remote = sources.drop(1)
-        assertEquals(2, remote.size)
+        assertEquals(4, remote.size)
         assertTrue(remote.all { it.builtin && !it.local && it.enabled })
         assertTrue(remote.all { RecommendSourceRules.isValidUrl(it.url) })
+        assertTrue(remote.all { it.targetTypes.isNotEmpty() })
         assertTrue(remote.any { it.id == "anthropic-skills" && it.format == RecommendSourceFormat.CLAUDE_MARKETPLACE })
         assertTrue(remote.any { it.id == "mcp-registry" && it.format == RecommendSourceFormat.MCP_REGISTRY })
+        assertTrue(remote.any { it.id == RecommendSourceRules.DSH_OPEN_SOURCE_ID && it.format == RecommendSourceFormat.DSH_CATALOG })
+        assertTrue(remote.any { it.id == RecommendSourceRules.DSH_MARKET_SOURCE_ID && it.format == RecommendSourceFormat.DSH_CATALOG })
+        assertEquals(RecommendType.PLUGIN, sources.first { it.id == RecommendSourceRules.DSH_OPEN_SOURCE_ID }.targetTypes.single())
     }
 
     @Test
@@ -252,6 +256,23 @@ class RecommendSourceRulesTest {
 
         val empty = RecommendSourceRules.normalize(emptyList())
         assertEquals(RecommendSourceRules.defaultSources().map { it.id }, empty.map { it.id })
+    }
+
+    @Test
+    fun `normalize backfills target types for builtin sources from older configs`() {
+        val oldAnthropic = RecommendSource(
+            id = "anthropic-skills",
+            name = "Anthropic Skills",
+            url = "https://raw.githubusercontent.com/anthropics/skills/main/.claude-plugin/marketplace.json",
+            builtin = true,
+            enabled = true,
+            format = RecommendSourceFormat.CLAUDE_MARKETPLACE,
+        )
+
+        val normalized = RecommendSourceRules.normalize(listOf(oldAnthropic))
+
+        val migrated = normalized.first { it.id == "anthropic-skills" }
+        assertEquals(listOf(RecommendType.SKILL), migrated.targetTypes)
     }
 
     @Test

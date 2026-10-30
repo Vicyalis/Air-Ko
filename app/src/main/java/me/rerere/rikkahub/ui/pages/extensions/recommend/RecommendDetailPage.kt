@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -35,10 +37,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Download01
+import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Shield02
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.recommend.RecommendEntry
+import me.rerere.rikkahub.data.recommend.RecommendType
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
@@ -111,6 +115,12 @@ fun RecommendDetailPage(
                 EntryHeader(entry = current, installed = installed)
             }
 
+            if (current.type == RecommendType.PLUGIN) {
+                item(key = "dsh_info") {
+                    DshInfoCard(entry = current)
+                }
+            }
+
             item(key = "security") {
                 CardGroup(title = { Text(stringResource(R.string.wp9_detail_security)) }) {
                     item(
@@ -134,6 +144,11 @@ fun RecommendDetailPage(
                                 SelectionContainer {
                                     Text(text = current.sha256, fontFamily = FontFamily.Monospace)
                                 }
+                            } else if (current.type == RecommendType.PLUGIN) {
+                                Text(
+                                    text = stringResource(R.string.wp9_dsh_no_sha),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             } else {
                                 Text(
                                     text = stringResource(R.string.wp9_detail_no_sha),
@@ -184,7 +199,11 @@ fun RecommendDetailPage(
                     Icon(HugeIcons.Download01, contentDescription = null, modifier = Modifier.size(18.dp))
                     Text(
                         text = stringResource(
-                            if (installed) R.string.wp9_detail_reinstall else R.string.wp9_detail_open_install
+                            when {
+                                installed -> R.string.wp9_detail_reinstall
+                                current.type == RecommendType.PLUGIN -> R.string.wp9_dsh_install_action
+                                else -> R.string.wp9_detail_open_install
+                            }
                         ),
                         modifier = Modifier.padding(start = 8.dp),
                     )
@@ -249,6 +268,9 @@ private fun EntryHeader(
                     Tag(type = TagType.SUCCESS) { Text(stringResource(R.string.wp9_list_installed)) }
                 }
                 Tag(type = TagType.INFO) { Text(installKindLabel(entry.installKind)) }
+                if (entry.type == me.rerere.rikkahub.data.recommend.RecommendType.PLUGIN) {
+                    Tag(type = dshKindTagType(entry.dshKind)) { Text(dshKindLabel(entry.dshKind)) }
+                }
                 Tag { Text(recommendOriginLabel(entry)) }
             }
 
@@ -266,4 +288,83 @@ private fun EntryHeader(
             }
         }
     }
+}
+
+@Composable
+private fun DshInfoCard(entry: RecommendEntry) {
+    val uriHandler = LocalUriHandler.current
+    val repo = entry.dshRepository.ifBlank { entry.dshHomepage }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        CardGroup(title = { Text(stringResource(R.string.wp9_dsh_info)) }) {
+            item(
+                headlineContent = { Text(stringResource(R.string.wp9_dsh_package)) },
+                supportingContent = {
+                    SelectionContainer {
+                        Text(entry.dshPackage.ifBlank { "-" }, fontFamily = FontFamily.Monospace)
+                    }
+                },
+                leadingContent = { CardGroupIcon(HugeIcons.Puzzle) },
+            )
+            item(
+                headlineContent = { Text(stringResource(R.string.wp9_dsh_category)) },
+                supportingContent = {
+                    Text(
+                        listOfNotNull(
+                            entry.dshCategoryLabel.ifBlank { entry.dshCategory }.takeIf { it.isNotBlank() },
+                            entry.version.takeIf { it.isNotBlank() }?.let { "v$it" },
+                            entry.dshStars.takeIf { it > 0 }?.let {
+                                stringResource(R.string.wp9_dsh_stars_format, compactStarCount(it))
+                            },
+                        ).joinToString(" · ").ifBlank { "-" }
+                    )
+                },
+                leadingContent = { CardGroupIcon(HugeIcons.Puzzle) },
+            )
+            if (entry.dshEngines.isNotBlank()) {
+                item(
+                    headlineContent = { Text(stringResource(R.string.wp9_dsh_engines)) },
+                    supportingContent = {
+                        SelectionContainer {
+                            Text(entry.dshEngines, fontFamily = FontFamily.Monospace)
+                        }
+                    },
+                    leadingContent = { CardGroupIcon(HugeIcons.Shield02) },
+                )
+            }
+            item(
+                headlineContent = { Text(stringResource(R.string.wp9_dsh_compat)) },
+                supportingContent = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Tag(type = dshKindTagType(entry.dshKind)) {
+                            Text(dshKindLabel(entry.dshKind))
+                        }
+                        Text(
+                            text = dshKindDescription(entry.dshKind),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (entry.dshSourceType.isNotBlank()) {
+                            Text(
+                                text = stringResource(R.string.wp9_dsh_source_type, entry.dshSourceType),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                },
+                leadingContent = { CardGroupIcon(HugeIcons.Shield02) },
+            )
+        }
+        if (repo.isNotBlank()) {
+            TextButton(onClick = { runCatching { uriHandler.openUri(repo) } }) {
+                Text(stringResource(R.string.wp9_dsh_open_repo))
+            }
+        }
+    }
+}
+
+private fun compactStarCount(value: Int): String = when {
+    value >= 1_000_000 -> "%.1fM".format(value / 1_000_000f)
+    value >= 1_000 -> "%.1fk".format(value / 1_000f)
+    else -> value.toString()
 }

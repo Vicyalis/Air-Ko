@@ -16,11 +16,20 @@ import me.rerere.rikkahub.data.plugin.PluginManager
 sealed interface PluginInstallState {
     data object Idle : PluginInstallState
 
-    data object Running : PluginInstallState
+    /** [key] 是触发安装的条目（url / sample / 商店 id / all），页面用它显示单项进度。 */
+    data class Running(val key: String? = null) : PluginInstallState
 
-    data class Success(val pluginName: String) : PluginInstallState
+    data class Success(
+        val pluginName: String,
+        val count: Int = 1,
+        val key: String? = null,
+    ) : PluginInstallState
 
-    data class Failed(val reason: PluginErrorReason?, val detail: String) : PluginInstallState
+    data class Failed(
+        val reason: PluginErrorReason?,
+        val detail: String,
+        val key: String? = null,
+    ) : PluginInstallState
 }
 
 class PluginsVM(
@@ -35,10 +44,10 @@ class PluginsVM(
     fun installFromUrl(url: String) {
         if (url.isBlank() || _installState.value is PluginInstallState.Running) return
         viewModelScope.launch {
-            _installState.value = PluginInstallState.Running
+            _installState.value = PluginInstallState.Running("url")
             _installState.value = pluginManager.installFromUrl(url).fold(
-                onSuccess = { PluginInstallState.Success(it.manifest.name) },
-                onFailure = { it.toInstallFailure() },
+                onSuccess = { PluginInstallState.Success(it.manifest.name, key = "url") },
+                onFailure = { it.toInstallFailure("url") },
             )
         }
     }
@@ -46,10 +55,49 @@ class PluginsVM(
     fun installSample() {
         if (_installState.value is PluginInstallState.Running) return
         viewModelScope.launch {
-            _installState.value = PluginInstallState.Running
+            _installState.value = PluginInstallState.Running("sample")
             _installState.value = pluginManager.installFromJson(SAMPLE_PLUGIN_JSON).fold(
-                onSuccess = { PluginInstallState.Success(it.manifest.name) },
-                onFailure = { it.toInstallFailure() },
+                onSuccess = { PluginInstallState.Success(it.manifest.name, key = "sample") },
+                onFailure = { it.toInstallFailure("sample") },
+            )
+        }
+    }
+
+    /** 安装商店里的内置移植插件：资源随 APK 打包，点一下即安装并自动启用。 */
+    fun installBundled(key: String, assetPath: String) {
+        if (_installState.value is PluginInstallState.Running) return
+        viewModelScope.launch {
+            _installState.value = PluginInstallState.Running(key)
+            _installState.value = pluginManager.installFromAsset(assetPath).fold(
+                onSuccess = { PluginInstallState.Success(it.manifest.name, key = key) },
+                onFailure = { it.toInstallFailure(key) },
+            )
+        }
+    }
+
+    /** 一键安装全部尚未安装的商店插件。 */
+    fun installAllBundled(entries: List<RecommendedHarnessPlugin>) {
+        if (_installState.value is PluginInstallState.Running) return
+        viewModelScope.launch {
+            val missing = entries.filter { entry ->
+                pluginManager.installed.value.none { it.manifest.id == entry.id }
+            }
+            if (missing.isEmpty()) return@launch
+
+            _installState.value = PluginInstallState.Running("all")
+            var installed = 0
+            var lastFailure: PluginInstallState.Failed? = null
+            for (entry in missing) {
+                _installState.value = PluginInstallState.Running(entry.id)
+                pluginManager.installFromAsset(entry.assetPath).fold(
+                    onSuccess = { installed++ },
+                    onFailure = { lastFailure = it.toInstallFailure(entry.id) },
+                )
+            }
+            _installState.value = lastFailure ?: PluginInstallState.Success(
+                pluginName = "",
+                count = installed,
+                key = "all",
             )
         }
     }
@@ -75,14 +123,16 @@ class PluginsVM(
     }
 }
 
-private fun Throwable.toInstallFailure(): PluginInstallState.Failed = when (this) {
+private fun Throwable.toInstallFailure(key: String? = null): PluginInstallState.Failed = when (this) {
     is PluginException -> PluginInstallState.Failed(
         reason = reason,
         detail = message.orEmpty(),
+        key = key,
     )
 
     else -> PluginInstallState.Failed(
         reason = null,
         detail = message ?: this::class.java.simpleName,
+        key = key,
     )
 }

@@ -21,6 +21,13 @@ data class RecommendSource(
     val local: Boolean = false,
     val enabled: Boolean = true,
     val format: RecommendSourceFormat = RecommendSourceFormat.NATIVE,
+    /**
+     * 该源只在这些商店类型下加载；空列表表示所有类型。
+     *
+     * DSH 目录动辄几 MB，打开技能/MCP 商店时不应该顺带下载它；因此预置源按类型隔离，
+     * 只有打开 DSH 插件页才会拉取 [RecommendSourceFormat.DSH_CATALOG] 的源。
+     */
+    val targetTypes: List<RecommendType> = emptyList(),
 )
 
 /** 源的 index 格式。 */
@@ -34,6 +41,9 @@ enum class RecommendSourceFormat {
 
     /** MCP 官方注册表（registry.modelcontextprotocol.io）：拆成 mcp 条目 */
     MCP_REGISTRY,
+
+    /** DSH 插件市场（dshopen.org / dshmarket 的 format=1 index.json）：拆成 plugin 条目 */
+    DSH_CATALOG,
 }
 
 /**
@@ -44,6 +54,9 @@ enum class RecommendSourceFormat {
 object RecommendSourceRules {
     /** 本地源固定 id，UI 用它去取本地化名称 */
     const val LOCAL_SOURCE_ID = "builtin"
+
+    const val DSH_OPEN_SOURCE_ID = "dsh-open-market"
+    const val DSH_MARKET_SOURCE_ID = "dsh-market"
 
     /** 本地源的地址是内部标记，不是真实网络地址 */
     const val LOCAL_SOURCE_URL = "asset:builtin_index.json"
@@ -86,6 +99,7 @@ object RecommendSourceRules {
             builtin = true,
             enabled = true,
             format = RecommendSourceFormat.CLAUDE_MARKETPLACE,
+            targetTypes = listOf(RecommendType.SKILL),
         ),
         RecommendSource(
             id = "mcp-registry",
@@ -94,6 +108,25 @@ object RecommendSourceRules {
             builtin = true,
             enabled = true,
             format = RecommendSourceFormat.MCP_REGISTRY,
+            targetTypes = listOf(RecommendType.MCP),
+        ),
+        RecommendSource(
+            id = DSH_OPEN_SOURCE_ID,
+            name = "DSH Open Market",
+            url = "https://dshopen.org/index.json",
+            builtin = true,
+            enabled = true,
+            format = RecommendSourceFormat.DSH_CATALOG,
+            targetTypes = listOf(RecommendType.PLUGIN),
+        ),
+        RecommendSource(
+            id = DSH_MARKET_SOURCE_ID,
+            name = "DSH Market",
+            url = "https://cdn.jsdelivr.net/npm/dsh-plugin-catalog/index.json",
+            builtin = true,
+            enabled = true,
+            format = RecommendSourceFormat.DSH_CATALOG,
+            targetTypes = listOf(RecommendType.PLUGIN),
         ),
     )
 
@@ -182,6 +215,7 @@ object RecommendSourceRules {
 
     /** 兼容旧配置文件：补齐 id、去重、清掉已下线的 404 预置源、补齐当前预置源、保底一个本地源。 */
     fun normalize(current: List<RecommendSource>): List<RecommendSource> {
+        val defaultsById = defaultSources().associateBy { it.id }
         val cleaned = current
             .filter { it.url.isNotBlank() }
             .filterNot { it.builtin && it.id in DEPRECATED_SOURCE_IDS }
@@ -196,7 +230,20 @@ object RecommendSourceRules {
                         format = RecommendSourceFormat.NATIVE,
                     )
                 } else {
-                    source.copy(id = source.id.ifBlank { newSourceId() })
+                    val default = defaultsById[source.id]
+                    source.copy(
+                        id = source.id.ifBlank { newSourceId() },
+                        builtin = source.builtin || default != null,
+                        // 老版本的内置源没有 target_types；升级后按类型隔离，避免打开插件页时
+                        // 顺带下载技能/MCP 目录，反之亦然。
+                        targetTypes = if (
+                            source.builtin && default != null && source.targetTypes.isEmpty()
+                        ) {
+                            default.targetTypes
+                        } else {
+                            source.targetTypes
+                        },
+                    )
                 }
             }
         return ensureDefaults(cleaned)

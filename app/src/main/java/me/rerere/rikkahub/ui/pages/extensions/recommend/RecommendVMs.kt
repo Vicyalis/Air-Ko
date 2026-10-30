@@ -28,17 +28,18 @@ class RecommendListVM(
     private val repository: RecommendIndexRepository,
     private val sourceStore: RecommendSourceStore,
 ) : ViewModel() {
-    val feed = repository.state
     val sources = sourceStore.sources
     val sort = sourceStore.sort
     val installed = sourceStore.installed
 
-    init {
-        viewModelScope.launch { repository.ensureLoaded() }
+    fun feedFor(type: RecommendType) = repository.stateFor(type)
+
+    fun ensureLoaded(type: RecommendType) {
+        viewModelScope.launch { repository.ensureLoaded(type) }
     }
 
-    fun refresh() {
-        viewModelScope.launch { repository.refresh() }
+    fun refresh(type: RecommendType) {
+        viewModelScope.launch { repository.refresh(type) }
     }
 
     fun setSort(value: RecommendSort) {
@@ -76,7 +77,7 @@ class RecommendSourcesVM(
             sourceStore.addSource(name, url).fold(
                 onSuccess = {
                     _feedback.value = RecommendSourceFeedback.ADDED
-                    repository.refresh()
+                    repository.invalidate()
                 },
                 onFailure = { _feedback.value = it.toFeedback() },
             )
@@ -88,7 +89,7 @@ class RecommendSourcesVM(
             sourceStore.updateSource(id, name, url).fold(
                 onSuccess = {
                     _feedback.value = RecommendSourceFeedback.UPDATED
-                    repository.refresh()
+                    repository.invalidate()
                 },
                 onFailure = { _feedback.value = it.toFeedback() },
             )
@@ -99,14 +100,14 @@ class RecommendSourcesVM(
         viewModelScope.launch {
             sourceStore.removeSource(id)
             _feedback.value = RecommendSourceFeedback.REMOVED
-            repository.refresh()
+            repository.invalidate()
         }
     }
 
     fun setEnabled(id: String, enabled: Boolean) {
         viewModelScope.launch {
             sourceStore.setSourceEnabled(id, enabled)
-            repository.refresh()
+            repository.invalidate()
         }
     }
 
@@ -126,12 +127,12 @@ class RecommendSourcesVM(
         viewModelScope.launch {
             sourceStore.resetToDefaults()
             _feedback.value = RecommendSourceFeedback.RESET
-            repository.refresh()
+            repository.invalidate()
         }
     }
 
     fun refreshAll() {
-        viewModelScope.launch { repository.refresh() }
+        repository.invalidate()
     }
 }
 
@@ -181,9 +182,9 @@ class RecommendInstallVM(
 ) : ViewModel() {
     private val identity = "${type.wire}:$entryId"
 
-    val entry: StateFlow<RecommendEntry?> = repository.state
+    val entry: StateFlow<RecommendEntry?> = repository.stateFor(type)
         .map { it.findEntry(type, entryId) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, repository.state.value.findEntry(type, entryId))
+        .stateIn(viewModelScope, SharingStarted.Eagerly, repository.findEntry(type, entryId))
 
     val installed: StateFlow<Boolean> = sourceStore.installed
         .map { identity in it }
@@ -205,6 +206,9 @@ class RecommendInstallVM(
     val workspaceName = _workspaceName.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            repository.ensureLoaded(type)
+        }
         viewModelScope.launch {
             _workspaceName.value = withContext(Dispatchers.IO) { findWorkspace()?.name }
         }

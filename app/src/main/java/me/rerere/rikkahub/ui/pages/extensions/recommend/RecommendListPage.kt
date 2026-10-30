@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.ui.pages.extensions.recommend
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,6 +30,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,14 +38,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Clock01
@@ -51,9 +57,12 @@ import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Store01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.recommend.DshPluginKind
 import me.rerere.rikkahub.data.recommend.RecommendEntry
+import me.rerere.rikkahub.data.recommend.RecommendFeedState
 import me.rerere.rikkahub.data.recommend.RecommendSort
 import me.rerere.rikkahub.data.recommend.RecommendSourceResult
+import me.rerere.rikkahub.data.recommend.RecommendType
 import me.rerere.rikkahub.data.recommend.filterEntries
 import me.rerere.rikkahub.data.recommend.sortEntries
 import me.rerere.rikkahub.ui.components.ai.ExtensionEmptyState
@@ -80,24 +89,41 @@ fun RecommendListPage(
 ) {
     val type = remember(typeWire) { recommendTypeFromNav(typeWire) }
     val navController = LocalNavController.current
-    val feed by vm.feed.collectAsStateWithLifecycle()
+    val feedFlow = remember(type) { vm.feedFor(type) }
+    val feed by feedFlow.collectAsStateWithLifecycle(initialValue = RecommendFeedState())
     val sources by vm.sources.collectAsStateWithLifecycle()
     val sort by vm.sort.collectAsStateWithLifecycle()
     val installed by vm.installed.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
+    LaunchedEffect(type, feed.loadedOnce) {
+        if (!feed.loadedOnce) vm.ensureLoaded(type)
+    }
+
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var sourceFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var categoryFilter by rememberSaveable(typeWire) { mutableStateOf<String?>(null) }
 
     val enabledSources = remember(sources) { sources.filter { it.enabled } }
     val typeEntries = remember(feed.entries, type) { feed.entriesOf(type) }
-    val visibleEntries = remember(typeEntries, searchQuery, sourceFilter, sort) {
+    val categories = remember(typeEntries) {
+        typeEntries
+            .filter { it.dshCategory.isNotBlank() }
+            .distinctBy { it.dshCategory }
+            .sortedBy { (it.dshCategoryLabel.ifBlank { it.dshCategory }).lowercase() }
+    }
+    val visibleEntries = remember(typeEntries, searchQuery, sourceFilter, categoryFilter, sort) {
         val bySource = if (sourceFilter == null) {
             typeEntries
         } else {
             typeEntries.filter { it.originId == sourceFilter }
         }
-        sortEntries(filterEntries(bySource, searchQuery), sort)
+        val byCategory = if (categoryFilter == null) {
+            bySource
+        } else {
+            bySource.filter { it.dshCategory == categoryFilter }
+        }
+        sortEntries(filterEntries(byCategory, searchQuery), sort)
     }
 
     Scaffold(
@@ -106,7 +132,7 @@ fun RecommendListPage(
                 title = { Text(recommendTypeTitle(type)) },
                 navigationIcon = { BackButton() },
                 actions = {
-                    IconButton(onClick = { vm.refresh() }) {
+                    IconButton(onClick = { vm.refresh(type) }) {
                         Icon(HugeIcons.Refresh01, contentDescription = stringResource(R.string.wp9_list_refresh))
                     }
                     IconButton(onClick = { navController.navigate(Screen.RecommendSources) }) {
@@ -125,7 +151,7 @@ fun RecommendListPage(
     ) { innerPadding ->
         PullToRefreshBox(
             isRefreshing = feed.loading && feed.loadedOnce,
-            onRefresh = { vm.refresh() },
+            onRefresh = { vm.refresh(type) },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
@@ -191,6 +217,29 @@ fun RecommendListPage(
                                     selected = sourceFilter == source.id,
                                     onClick = { sourceFilter = source.id },
                                     label = { Text(recommendSourceName(source)) },
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (type == RecommendType.PLUGIN && categories.size > 1) {
+                    item(key = "categories") {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            item(key = "all_categories") {
+                                FilterChip(
+                                    selected = categoryFilter == null,
+                                    onClick = { categoryFilter = null },
+                                    label = { Text(stringResource(R.string.wp9_list_all_categories)) },
+                                )
+                            }
+                            items(categories, key = { it.dshCategory }) { entry ->
+                                FilterChip(
+                                    selected = categoryFilter == entry.dshCategory,
+                                    onClick = { categoryFilter = entry.dshCategory },
+                                    label = {
+                                        Text(entry.dshCategoryLabel.ifBlank { entry.dshCategory })
+                                    },
                                 )
                             }
                         }
@@ -297,7 +346,7 @@ fun RecommendListPage(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center,
                                 )
-                                TextButton(onClick = { vm.refresh() }) {
+                                TextButton(onClick = { vm.refresh(type) }) {
                                     Text(stringResource(R.string.wp9_list_retry))
                                 }
                             }
@@ -367,7 +416,7 @@ private fun RecommendEntryCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            CardGroupIcon(recommendTypeIcon(entry.type))
+            RecommendEntryIcon(entry)
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -403,7 +452,12 @@ private fun RecommendEntryCard(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Tag(type = TagType.INFO) { Text(installKindLabel(entry.installKind)) }
-                    entry.tags.take(2).forEach { tag ->
+                    if (entry.type == RecommendType.PLUGIN) {
+                        Tag(type = dshKindTagType(entry.dshKind)) {
+                            Text(dshKindLabel(entry.dshKind))
+                        }
+                    }
+                    entry.tags.take(if (entry.type == RecommendType.PLUGIN) 1 else 2).forEach { tag ->
                         Tag { Text(tag, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     }
                 }
@@ -411,6 +465,7 @@ private fun RecommendEntryCard(
                     text = listOfNotNull(
                         recommendOriginLabel(entry).takeIf { it.isNotBlank() },
                         entry.author.takeIf { it.isNotBlank() },
+                        entry.dshStars.takeIf { it > 0 }?.let { stringResource(R.string.wp9_dsh_stars_format, formatCompactCount(it)) },
                     ).joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -420,6 +475,35 @@ private fun RecommendEntryCard(
             }
         }
     }
+}
+
+@Composable
+private fun RecommendEntryIcon(entry: RecommendEntry) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        contentAlignment = Alignment.Center,
+    ) {
+        CardGroupIcon(recommendTypeIcon(entry.type))
+        if (entry.dshIconUrl.isNotBlank()) {
+            AsyncImage(
+                model = entry.dshIconUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.Crop,
+            )
+        }
+    }
+}
+
+private fun formatCompactCount(value: Int): String = when {
+    value >= 1_000_000 -> "%.1fM".format(value / 1_000_000f)
+    value >= 1_000 -> "%.1fk".format(value / 1_000f)
+    else -> value.toString()
 }
 
 /** 源结果里带的名称可能为空（本地内置源没名字），列表页与错误提示都要把它翻成可读文本。 */

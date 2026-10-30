@@ -49,6 +49,8 @@ import me.rerere.hugeicons.stroke.Play
 import me.rerere.hugeicons.stroke.Shield02
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.recommend.DshPluginKind
+import me.rerere.rikkahub.data.recommend.RecommendEntry
 import me.rerere.rikkahub.data.recommend.RecommendInstallResult
 import me.rerere.rikkahub.data.recommend.RecommendType
 import me.rerere.rikkahub.data.recommend.runtimeCommand
@@ -158,6 +160,11 @@ fun RecommendInstallPage(
                             Text(text = current.name, style = MaterialTheme.typography.titleMediumEmphasized)
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Tag(type = TagType.INFO) { Text(installKindLabel(current.installKind)) }
+                                if (current.type == RecommendType.PLUGIN) {
+                                    Tag(type = dshKindTagType(current.dshKind)) {
+                                        Text(dshKindLabel(current.dshKind))
+                                    }
+                                }
                                 if (installed) {
                                     Tag(type = TagType.SUCCESS) { Text(stringResource(R.string.wp9_list_installed)) }
                                 }
@@ -167,9 +174,14 @@ fun RecommendInstallPage(
                 }
             }
 
+            if (current.type == RecommendType.PLUGIN) {
+                item(key = "dsh_compat") {
+                    DshInstallCompatCard(entry = current)
+                }
+            }
+
             item(key = "security") {
-                CardGroup(title = { Text(stringResource(R.string.wp9_detail_security)) }) {
-                    item(
+                CardGroup(title = { Text(stringResource(R.string.wp9_detail_security)) }) {                    item(
                         headlineContent = { Text(stringResource(R.string.wp9_detail_source)) },
                         supportingContent = {
                             SelectionContainer {
@@ -186,6 +198,11 @@ fun RecommendInstallPage(
                         supportingContent = {
                             if (current.hasChecksum) {
                                 SelectionContainer { Text(current.sha256, fontFamily = FontFamily.Monospace) }
+                            } else if (current.type == RecommendType.PLUGIN) {
+                                Text(
+                                    text = stringResource(R.string.wp9_dsh_no_sha),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             } else {
                                 Text(
                                     text = stringResource(R.string.wp9_detail_no_sha),
@@ -208,6 +225,10 @@ fun RecommendInstallPage(
                     Text(
                         text = when {
                             installableMcp -> stringResource(R.string.wp9_mcp_oneclick)
+                            current.type == RecommendType.PLUGIN && installed ->
+                                stringResource(R.string.wp9_install_reinstall)
+                            current.type == RecommendType.PLUGIN ->
+                                stringResource(R.string.wp9_dsh_install_action)
                             installed -> stringResource(R.string.wp9_install_reinstall)
                             else -> stringResource(R.string.wp9_install_run)
                         },
@@ -253,7 +274,7 @@ fun RecommendInstallPage(
                 }
             }
 
-            if (current.deployDoc.isNotBlank()) {
+            if (current.deployDoc.isNotBlank() && current.type != RecommendType.PLUGIN) {
                 item(key = "deploy_doc") {
                     CopyableCodeBlock(
                         title = stringResource(R.string.wp9_deploy_doc),
@@ -345,7 +366,15 @@ fun RecommendInstallPage(
                     R.string.wp9_confirm_message,
                     current.name,
                     current.displaySourceUrl.ifBlank { "-" },
-                    current.sha256.ifBlank { stringResource(R.string.wp9_detail_no_sha) },
+                    current.sha256.ifBlank {
+                        stringResource(
+                            if (current.type == RecommendType.PLUGIN) {
+                                R.string.wp9_dsh_no_sha
+                            } else {
+                                R.string.wp9_detail_no_sha
+                            }
+                        )
+                    },
                 )
             )
         }
@@ -573,6 +602,55 @@ private fun TerminalSection(
 
             is RecommendTerminalState.Failed -> WarningCard(
                 text = stringResource(R.string.wp9_deploy_terminal_failed, state.message)
+            )
+        }
+    }
+}
+
+@Composable
+private fun DshInstallCompatCard(entry: RecommendEntry) {
+    val warning = entry.dshKind == DshPluginKind.RUNTIME
+    val container = if (warning) {
+        MaterialTheme.colorScheme.errorContainer
+    } else {
+        MaterialTheme.colorScheme.secondaryContainer
+    }
+    val content = if (warning) {
+        MaterialTheme.colorScheme.onErrorContainer
+    } else {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = container,
+        contentColor = content,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = if (warning) HugeIcons.Alert02 else HugeIcons.CheckmarkCircle02,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Tag(type = dshKindTagType(entry.dshKind)) { Text(dshKindLabel(entry.dshKind)) }
+                Text(
+                    text = entry.dshPortName.takeIf { it.isNotBlank() } ?: entry.dshPackage,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                )
+            }
+            Text(
+                text = dshKindDescription(entry.dshKind),
+                style = MaterialTheme.typography.bodySmall,
             )
         }
     }

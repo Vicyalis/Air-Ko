@@ -34,7 +34,10 @@ enum class RecommendType(val wire: String) {
     SKILL("skill"),
     PROMPT("prompt"),
     QUICK_MESSAGE("quick_message"),
-    MCP("mcp");
+    MCP("mcp"),
+
+    /** DeepSeek Harness（DSH）生态插件；安装路径由 [RecommendEntry.dshKind] 决定。 */
+    PLUGIN("plugin");
 
     companion object {
         fun fromWire(value: String?): RecommendType? {
@@ -59,7 +62,13 @@ enum class InstallKind(val wire: String) {
     REMOTE("remote"),
 
     /** 内容直接内嵌在 index 里，不需要下载 */
-    INLINE("inline");
+    INLINE("inline"),
+
+    /**
+     * DSH 生态插件。不是在本机跑 Node，而是下载 npm tarball / Git 归档后，
+     * 安装内置移植版、提取 `SKILL.md` 或指令文件；纯 Cordis/Node 代码会明确拒绝。
+     */
+    DSH("dsh");
 
     /** 这个安装方式是否需要在设备上跑命令（决定「部署讲解」要不要出现终端入口） */
     val needsRuntime: Boolean
@@ -120,6 +129,22 @@ data class RecommendEntry(
     val mcpTransport: McpTransport = McpTransport.STREAMABLE_HTTP,
     val mcpHeaders: List<Pair<String, String>> = emptyList(),
     val mcpOauth: McpOAuthState? = null,
+    // 以下字段只对 DSH 插件条目有意义。索引本身不可信，asset 路径只从 [DshPorts] 查表，
+    // 绝不由远端 index 直接指定。
+    val dshPackage: String = "",
+    val dshRepository: String = "",
+    val dshHomepage: String = "",
+    val dshIconUrl: String = "",
+    val dshCategory: String = "",
+    val dshCategoryLabel: String = "",
+    val dshStars: Int = 0,
+    val dshEngines: String = "",
+    val dshSourceType: String = "",
+    val dshRegistry: String = "",
+    val dshSourceCommit: String = "",
+    val dshKind: DshPluginKind = DshPluginKind.AUTO,
+    val dshPortAsset: String = "",
+    val dshPortName: String = "",
 ) {
     /** 跨源唯一的条目标识，用于「已确认/已安装」记录与导航参数 */
     val identity: String get() = "${type.wire}:$id"
@@ -216,6 +241,19 @@ internal data class RecommendEntryDto(
     @SerialName("mcp_transport") val mcpTransport: String = "",
     @SerialName("mcp_headers") val mcpHeaders: JsonElement? = null,
     @SerialName("mcp_oauth") val mcpOauth: JsonElement? = null,
+    // DSH 扩展字段：用于展示详情、定位 npm/Git 包与记录兼容级别。
+    @SerialName("dsh_package") val dshPackage: String = "",
+    @SerialName("dsh_repository") val dshRepository: String = "",
+    @SerialName("dsh_homepage") val dshHomepage: String = "",
+    @SerialName("dsh_icon") val dshIcon: String = "",
+    @SerialName("dsh_category") val dshCategory: String = "",
+    @SerialName("dsh_category_label") val dshCategoryLabel: String = "",
+    @SerialName("dsh_stars") val dshStars: Int = 0,
+    @SerialName("dsh_engines") val dshEngines: String = "",
+    @SerialName("dsh_source_type") val dshSourceType: String = "",
+    @SerialName("dsh_registry") val dshRegistry: String = "",
+    @SerialName("dsh_source_commit") val dshSourceCommit: String = "",
+    @SerialName("dsh_kind") val dshKind: String = "",
 )
 
 /**
@@ -340,12 +378,12 @@ internal fun normalizeEntryElement(element: JsonElement): JsonElement {
     )
 }
 
-private sealed interface EntryValidation {
+internal sealed interface EntryValidation {
     data class Valid(val entry: RecommendEntry) : EntryValidation
     data class Invalid(val reason: String) : EntryValidation
 }
 
-private fun validateEntryDto(dto: RecommendEntryDto, baseUrl: String?): EntryValidation {
+internal fun validateEntryDto(dto: RecommendEntryDto, baseUrl: String?): EntryValidation {
     val id = dto.id.trim()
     if (id.isEmpty()) return EntryValidation.Invalid("缺少 id")
 
@@ -353,7 +391,7 @@ private fun validateEntryDto(dto: RecommendEntryDto, baseUrl: String?): EntryVal
         ?: return EntryValidation.Invalid("type 缺失或未知：${dto.type.ifBlank { "(空)" }}")
 
     val installKind = if (dto.installKind.isBlank()) {
-        InstallKind.INLINE
+        if (type == RecommendType.PLUGIN) InstallKind.DSH else InstallKind.INLINE
     } else {
         InstallKind.fromWire(dto.installKind)
             ?: return EntryValidation.Invalid("install_kind 未知：${dto.installKind}")
@@ -411,6 +449,15 @@ private fun validateEntryDto(dto: RecommendEntryDto, baseUrl: String?): EntryVal
     ) {
         return EntryValidation.Invalid("inline 条目既没有 content 也没有 source_url")
     }
+    if (type == RecommendType.PLUGIN && dto.dshPackage.isBlank()) {
+        return EntryValidation.Invalid("DSH 插件缺少 dsh_package")
+    }
+    if (type == RecommendType.PLUGIN && installKind != InstallKind.DSH) {
+        return EntryValidation.Invalid("DSH 插件必须使用 install_kind=dsh")
+    }
+    if (type != RecommendType.PLUGIN && dto.dshPackage.isNotBlank()) {
+        return EntryValidation.Invalid("非 plugin 条目不能声明 dsh_package")
+    }
     val hasMcpInlineContent = type == RecommendType.MCP && dto.content.isNotBlank()
     if (installKind == InstallKind.REMOTE && sourceUrl.isEmpty() &&
         remoteUrl.isEmpty() && !hasMcpInlineContent
@@ -430,6 +477,16 @@ private fun validateEntryDto(dto: RecommendEntryDto, baseUrl: String?): EntryVal
     }
 
     val name = dto.name.trim().ifEmpty { id }
+
+    val dshPort = if (type == RecommendType.PLUGIN) {
+        DshPorts.find(dto.dshPackage, dto.dshRepository)
+    } else {
+        null
+    }
+    val dshKind = when {
+        dshPort != null -> DshPluginKind.PORT
+        else -> DshPluginKind.fromWire(dto.dshKind) ?: DshPluginKind.AUTO
+    }
 
     return EntryValidation.Valid(
         RecommendEntry(
@@ -454,6 +511,20 @@ private fun validateEntryDto(dto: RecommendEntryDto, baseUrl: String?): EntryVal
             mcpTransport = mcpTransport,
             mcpHeaders = mcpHeaders,
             mcpOauth = mcpOauth,
+            dshPackage = dto.dshPackage.trim(),
+            dshRepository = dto.dshRepository.trim(),
+            dshHomepage = dto.dshHomepage.trim(),
+            dshIconUrl = dto.dshIcon.trim(),
+            dshCategory = dto.dshCategory.trim(),
+            dshCategoryLabel = dto.dshCategoryLabel.trim(),
+            dshStars = dto.dshStars.coerceAtLeast(0),
+            dshEngines = dto.dshEngines.trim(),
+            dshSourceType = dto.dshSourceType.trim(),
+            dshRegistry = dto.dshRegistry.trim(),
+            dshSourceCommit = dto.dshSourceCommit.trim(),
+            dshKind = dshKind,
+            dshPortAsset = dshPort?.assetPath.orEmpty(),
+            dshPortName = dshPort?.name.orEmpty(),
         )
     )
 }
@@ -524,7 +595,7 @@ fun sortEntries(entries: List<RecommendEntry>, sort: RecommendSort): List<Recomm
 
 /** RUNTIME 排序里各类安装方式的分组顺序：一键能用的在前，要跑命令的在后面。 */
 private fun installKindPriority(kind: InstallKind): Int = when (kind) {
-    InstallKind.INLINE -> 0
+    InstallKind.INLINE, InstallKind.DSH -> 0
     InstallKind.REMOTE -> 1
     InstallKind.NPX -> 2
     InstallKind.UVX -> 3
@@ -540,6 +611,8 @@ fun filterEntries(entries: List<RecommendEntry>, query: String): List<RecommendE
             entry.description.contains(keyword, ignoreCase = true) ||
             entry.author.contains(keyword, ignoreCase = true) ||
             entry.id.contains(keyword, ignoreCase = true) ||
+            entry.dshPackage.contains(keyword, ignoreCase = true) ||
+            entry.dshCategoryLabel.contains(keyword, ignoreCase = true) ||
             entry.tags.any { it.contains(keyword, ignoreCase = true) }
     }
 }
@@ -550,7 +623,7 @@ fun runtimeCommand(entry: RecommendEntry): String = entry.runCommand.ifBlank {
         InstallKind.NPX -> "npx -y ${entry.id}"
         InstallKind.UVX -> "uvx ${entry.id}"
         InstallKind.DOCKER -> "docker run -i --rm ${entry.id}"
-        InstallKind.REMOTE, InstallKind.INLINE -> ""
+        InstallKind.REMOTE, InstallKind.INLINE, InstallKind.DSH -> ""
     }
 }
 
@@ -559,7 +632,7 @@ fun runtimeProbeCommand(kind: InstallKind): String = when (kind) {
     InstallKind.NPX -> "node --version && npx --version"
     InstallKind.UVX -> "uv --version || uvx --version"
     InstallKind.DOCKER -> "docker --version"
-    InstallKind.REMOTE, InstallKind.INLINE -> ""
+    InstallKind.REMOTE, InstallKind.INLINE, InstallKind.DSH -> ""
 }
 
 /**

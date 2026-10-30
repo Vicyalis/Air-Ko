@@ -2070,7 +2070,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="plugins_install_success">已安装「%1$s」，并已自动启用。</string>
   <string name="plugins_store_title">推荐插件</string>
   <string name="plugins_store_note_title">DeepSeek Harness 生态</string>
-  <string name="plugins_store_note_desc">这些是 DeepSeek Harness（Cordis/Node）生态插件，不能在 Android 应用内直接执行，点击会打开 GitHub 页面。Air-Ko 插件是上方安装的 JSON 提示词包。</string>
+  <string name="plugins_store_note_desc">这些原项目是 DeepSeek Harness（Cordis/Node）生态插件，不能在 Android 应用内直接执行；点击条目或「打开」会前往 GitHub 页面。「下载」安装的是随 APK 打包的 Air-Ko 移植版——和上方一样的 JSON 提示词/工作流包。</string>
   <string name="plugins_store_dsh_tag">DSH</string>
   <string name="plugins_store_action_open">打开</string>
   <string name="plugins_store_archify_desc">把想法、计划或代码库转换成可交互的架构图，面向 Claude Code、Codex 等 Agent 的 skill。</string>
@@ -2100,4 +2100,11 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="plugins_error_invalid_manifest">清单缺少必填字段，或 id 不合法。</string>
   <string name="plugins_error_io">写入插件文件失败：%1$s</string>
   <string name="plugins_error_unknown">安装失败：%1$s</string>
+  <string name="plugins_store_port_tag">Air-Ko 移植</string>
+  <string name="plugins_store_action_download">下载</string>
+  <string name="plugins_store_action_installed">已安装</string>
+  <string name="plugins_store_action_install_all">全部安装</string>
+  <string name="plugins_store_action_all_installed">已全部安装</string>
+  <string name="plugins_store_installing">安装中…</string>
+  <string name="plugins_store_install_all_success">已安装并启用 %1$d 个插件。</string>
 </resources>

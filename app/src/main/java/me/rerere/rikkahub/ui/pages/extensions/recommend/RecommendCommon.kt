@@ -38,6 +38,7 @@ import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.sanitizeMcpServerName
+import me.rerere.rikkahub.data.recommend.DshPluginKind
 import me.rerere.rikkahub.data.recommend.InstallKind
 import me.rerere.rikkahub.data.recommend.RecommendEntry
 import me.rerere.rikkahub.data.recommend.RecommendSort
@@ -46,6 +47,7 @@ import me.rerere.rikkahub.data.recommend.RecommendSourceRules
 import me.rerere.rikkahub.data.recommend.RecommendType
 import me.rerere.rikkahub.utils.toLocalDateTime
 import me.rerere.rikkahub.utils.writeClipboardText
+import me.rerere.rikkahub.ui.components.ui.TagType
 
 /** 导航参数里的 type 字符串 → 枚举；认不出来时按技能处理（不 crash 比严格更重要）。 */
 fun recommendTypeFromNav(raw: String?): RecommendType =
@@ -58,6 +60,7 @@ fun recommendTypeTitle(type: RecommendType): String = stringResource(
         RecommendType.PROMPT -> R.string.wp9_title_prompt
         RecommendType.QUICK_MESSAGE -> R.string.wp9_title_quick_message
         RecommendType.MCP -> R.string.wp9_title_mcp
+        RecommendType.PLUGIN -> R.string.wp9_title_plugin
     }
 )
 
@@ -68,6 +71,7 @@ fun recommendTypeShortName(type: RecommendType): String = stringResource(
         RecommendType.PROMPT -> R.string.wp9_type_prompt
         RecommendType.QUICK_MESSAGE -> R.string.wp9_type_quick_message
         RecommendType.MCP -> R.string.wp9_type_mcp
+        RecommendType.PLUGIN -> R.string.wp9_type_plugin
     }
 )
 
@@ -76,6 +80,7 @@ fun recommendTypeIcon(type: RecommendType): ImageVector = when (type) {
     RecommendType.PROMPT -> HugeIcons.MagicWand01
     RecommendType.QUICK_MESSAGE -> HugeIcons.Zap
     RecommendType.MCP -> HugeIcons.McpServer
+    RecommendType.PLUGIN -> HugeIcons.Puzzle
 }
 
 @Composable
@@ -86,8 +91,36 @@ fun installKindLabel(kind: InstallKind): String = stringResource(
         InstallKind.DOCKER -> R.string.wp9_runtime_docker
         InstallKind.REMOTE -> R.string.wp9_runtime_remote
         InstallKind.INLINE -> R.string.wp9_runtime_inline
+        InstallKind.DSH -> R.string.wp9_runtime_dsh
     }
 )
+
+@Composable
+fun dshKindLabel(kind: DshPluginKind): String = stringResource(
+    when (kind) {
+        DshPluginKind.PORT -> R.string.wp9_dsh_kind_port
+        DshPluginKind.SKILL -> R.string.wp9_dsh_kind_skill
+        DshPluginKind.AUTO -> R.string.wp9_dsh_kind_auto
+        DshPluginKind.RUNTIME -> R.string.wp9_dsh_kind_runtime
+    }
+)
+
+@Composable
+fun dshKindDescription(kind: DshPluginKind): String = stringResource(
+    when (kind) {
+        DshPluginKind.PORT -> R.string.wp9_dsh_compat_port
+        DshPluginKind.SKILL -> R.string.wp9_dsh_compat_skill
+        DshPluginKind.AUTO -> R.string.wp9_dsh_compat_auto
+        DshPluginKind.RUNTIME -> R.string.wp9_dsh_compat_runtime
+    }
+)
+
+fun dshKindTagType(kind: DshPluginKind): TagType = when (kind) {
+    DshPluginKind.PORT -> TagType.SUCCESS
+    DshPluginKind.SKILL -> TagType.INFO
+    DshPluginKind.AUTO -> TagType.WARNING
+    DshPluginKind.RUNTIME -> TagType.ERROR
+}
 
 @Composable
 fun recommendSortLabel(sort: RecommendSort): String = stringResource(
@@ -106,6 +139,8 @@ fun formatTimestamp(millis: Long): String =
 /** 源的显示名：本地内置源没存名字，按界面语言翻译。 */
 @Composable
 fun recommendSourceName(source: RecommendSource): String = when {
+    source.id == RecommendSourceRules.DSH_OPEN_SOURCE_ID -> stringResource(R.string.wp9_source_dsh_open)
+    source.id == RecommendSourceRules.DSH_MARKET_SOURCE_ID -> stringResource(R.string.wp9_source_dsh_market)
     source.name.isNotBlank() -> source.name
     source.local || source.id == RecommendSourceRules.LOCAL_SOURCE_ID ->
         stringResource(R.string.wp9_sources_local_name)
@@ -117,6 +152,8 @@ fun recommendSourceName(source: RecommendSource): String = when {
 @Composable
 fun recommendOriginLabel(entry: RecommendEntry): String = when {
     entry.originId == RecommendSourceRules.LOCAL_SOURCE_ID -> stringResource(R.string.wp9_sources_local_name)
+    entry.originId == RecommendSourceRules.DSH_OPEN_SOURCE_ID -> stringResource(R.string.wp9_source_dsh_open)
+    entry.originId == RecommendSourceRules.DSH_MARKET_SOURCE_ID -> stringResource(R.string.wp9_source_dsh_market)
     entry.originName.isNotBlank() -> entry.originName
     entry.originId.isNotBlank() -> entry.originId
     else -> stringResource(R.string.wp9_sources_unknown)
@@ -170,7 +207,7 @@ fun dependencyCommand(kind: InstallKind, dependency: String): String = when (kin
     InstallKind.NPX -> "npm install -g $dependency"
     InstallKind.UVX -> "uv tool install $dependency"
     InstallKind.DOCKER -> "docker pull $dependency"
-    InstallKind.REMOTE, InstallKind.INLINE -> dependency
+    InstallKind.REMOTE, InstallKind.INLINE, InstallKind.DSH -> dependency
 }
 
 /**

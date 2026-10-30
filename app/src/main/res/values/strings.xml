@@ -2068,7 +2068,7 @@
   <string name="plugins_install_success">Installed \"%1$s\". It is enabled now.</string>
   <string name="plugins_store_title">Recommended plugins</string>
   <string name="plugins_store_note_title">DeepSeek Harness ecosystem</string>
-  <string name="plugins_store_note_desc">These projects are plugins for DeepSeek Harness (Cordis/Node). They cannot run inside this Android app — tapping opens the GitHub page. Air-Ko plugins are the JSON prompt packs installed above.</string>
+  <string name="plugins_store_note_desc">The original projects are DeepSeek Harness (Cordis/Node) plugins and cannot run inside this Android app. Tapping an entry or Open goes to its GitHub page. Download installs the bundled Air-Ko port — a JSON prompt/workflow pack like the plugins above.</string>
   <string name="plugins_store_dsh_tag">DSH</string>
   <string name="plugins_store_action_open">Open</string>
   <string name="plugins_store_archify_desc">Turn an idea, plan, or codebase into an interactive diagram. An agent skill for Claude Code, Codex and similar tools.</string>
@@ -2077,7 +2077,7 @@
   <string name="plugins_store_openviking_desc">A self-evolving context database for AI agents that unifies agent memory, knowledge RAG and skills.</string>
   <string name="plugins_store_reasonix_desc">A reliable coding agent aimed at complex software engineering tasks.</string>
   <string name="plugins_store_rea_desc">Reverse engineer anything with agents, from app behavior down to native binaries.</string>
-  <string name="plugins_security_note">Installed plugins live in the app private files directory and are removed with the app. Only prompt text is injected; no plugin code is executed.</string>
+  <string name="plugins_security_note">Installed plugins live in the private files directory of the app and are removed with the app. Only prompt text is injected; no plugin code is executed.</string>
   <string name="plugins_delete_title">Delete plugin?</string>
   <string name="plugins_delete_message">Remove \"%1$s\" from this device? Its prompt will no longer be added to the system prompt.</string>
   <string name="plugins_load_errors_title">%1$d plugin file(s) could not be read</string>
@@ -2098,4 +2098,11 @@
   <string name="plugins_error_invalid_manifest">The manifest is missing required fields or its id is invalid.</string>
   <string name="plugins_error_io">Could not write the plugin file: %1$s</string>
   <string name="plugins_error_unknown">Install failed: %1$s</string>
+  <string name="plugins_store_port_tag">Air-Ko port</string>
+  <string name="plugins_store_action_download">Download</string>
+  <string name="plugins_store_action_installed">Installed</string>
+  <string name="plugins_store_action_install_all">Install all</string>
+  <string name="plugins_store_action_all_installed">All installed</string>
+  <string name="plugins_store_installing">Installing…</string>
+  <string name="plugins_store_install_all_success">Installed and enabled %1$d plugins.</string>
 </resources>

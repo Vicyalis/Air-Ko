@@ -6,9 +6,9 @@ import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -75,22 +75,41 @@ class RecommendIndexRepository(
     private val mutex = Mutex()
     private val json = RecommendIndexJson
 
-    private val _state = MutableStateFlow(RecommendFeedState())
-    val state = _state.asStateFlow()
+    // 商店按类型分仓：DSH 目录可能有数千条、几 MB，打开技能/MCP 商店时不该顺带加载。
+    private val _states = MutableStateFlow<Map<RecommendType, RecommendFeedState>>(emptyMap())
 
-    init {
-        appScope.launch { ensureLoaded() }
+    /** 某个商店类型的数据流。类型之间互不覆盖，返回上一页时不会重新拉取。 */
+    fun stateFor(type: RecommendType): kotlinx.coroutines.flow.Flow<RecommendFeedState> =
+        _states.map { it[type] ?: RecommendFeedState() }
+            .distinctUntilChanged()
+
+    fun snapshotFor(type: RecommendType): RecommendFeedState =
+        _states.value[type] ?: RecommendFeedState()
+
+    fun findEntry(type: RecommendType, id: String): RecommendEntry? =
+        snapshotFor(type).findEntry(type, id)
+
+    /** 源配置变化后清空内存状态，下次进入对应商店时重新加载。 */
+    fun invalidate() {
+        _states.value = emptyMap()
     }
 
-    /** 首次进入商店时自动拉一次；已经有数据就不重复请求。 */
-    suspend fun ensureLoaded() {
-        if (_state.value.loadedOnce || _state.value.loading) return
-        refresh()
+    /** 首次进入某个类型的商店时自动拉一次；已经有数据就不重复请求。 */
+    suspend fun ensureLoaded(type: RecommendType) {
+        val current = snapshotFor(type)
+        if (current.loadedOnce || current.loading) return
+        refresh(type)
     }
 
-    suspend fun refresh() = mutex.withLock {
-        val sources = sourceStore.sources.value.filter { it.enabled }
-        _state.update { it.copy(loading = true) }
+    suspend fun refresh(type: RecommendType) = mutex.withLock {
+        val allSources = sourceStore.sources.value.filter { it.enabled }
+        val sources = allSources.filter { source ->
+            source.targetTypes.isEmpty() || type in source.targetTypes
+        }
+        _states.update { states ->
+            val current = states[type] ?: RecommendFeedState()
+            states + (type to current.copy(loading = true))
+        }
 
         val cache = readCache()
         val freshCache = mutableMapOf<String, CachedIndex>()
@@ -133,16 +152,17 @@ class RecommendIndexRepository(
             writeCache(cache + freshCache)
         }
 
-        _state.value = RecommendFeedState(
+        val newState = RecommendFeedState(
             loading = false,
             loadedOnce = true,
             // 同一个条目可能出现在多个源里，保留排序靠前的那个，避免列表里出现重复行
-            entries = entries.distinctBy { it.identity },
+            entries = entries.filter { it.type == type }.distinctBy { it.identity },
             sourceResults = results,
             cachedSourceIds = cachedSourceIds,
             skippedCount = skippedEntries.size,
             skippedEntries = skippedEntries.distinctBy { "${it.id}\u0000${it.reason}" },
         )
+        _states.update { it + (type to newState) }
     }
 
     private sealed interface SourceLoad {
@@ -207,6 +227,11 @@ class RecommendIndexRepository(
         val name = source.name.ifBlank { if (source.local) "builtin" else source.id }
         val payload = when (val converted = convertSourceText(source, raw)) {
             is SourceConvertResult.Converted -> converted.json
+            is SourceConvertResult.Parsed -> return RecommendIndexParseResult.Success(
+                entries = converted.entries,
+                skipped = converted.skipped,
+            )
+
             SourceConvertResult.NotApplicable -> raw
             is SourceConvertResult.Failed -> return RecommendIndexParseResult.Invalid(converted.message)
         }
@@ -285,8 +310,9 @@ class RecommendIndexRepository(
         const val TAG = "RecommendIndexRepo"
         const val CACHE_FILE_NAME = "recommend_index_cache.json"
         const val LOCAL_INDEX_ASSET = "recommend/builtin_index.json"
-        const val FETCH_TIMEOUT_MS = 20_000L
-        const val MAX_INDEX_CHARS = 2 * 1024 * 1024
+        const val FETCH_TIMEOUT_MS = 30_000L
+        // DSH 合并目录约 2.6 MB，旧的 2 MB 上限会让整个源被拒绝；缓存/解析都要留余量。
+        const val MAX_INDEX_CHARS = 12 * 1024 * 1024
     }
 }
 

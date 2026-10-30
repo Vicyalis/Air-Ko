@@ -4,9 +4,16 @@ import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.net.URLEncoder
+import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkahub.data.ai.mcp.McpCommonOptions
 import me.rerere.rikkahub.data.ai.mcp.McpOAuthState
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
@@ -17,8 +24,11 @@ import me.rerere.rikkahub.data.ai.mcp.uniqueMcpServerName
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.model.PromptInjection
 import me.rerere.rikkahub.data.model.QuickMessage
+import me.rerere.rikkahub.data.plugin.PluginManager
+import me.rerere.rikkahub.data.plugin.PluginManifest
 import me.rerere.rikkahub.data.skills.SkillFrontmatterParser
 import me.rerere.rikkahub.data.skills.SkillManager
+import me.rerere.rikkahub.utils.JsonInstant
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient
@@ -55,6 +65,7 @@ class RecommendInstaller(
     private val client: OkHttpClient,
     private val skillManager: SkillManager,
     private val settingsStore: SettingsStore,
+    private val pluginManager: PluginManager,
 ) {
     suspend fun install(entry: RecommendEntry): RecommendInstallResult = withContext(Dispatchers.IO) {
         val steps = mutableListOf<String>()
@@ -64,6 +75,9 @@ class RecommendInstaller(
             // 以前正是在这里失败，导致所有远程 MCP 条目都装不上。
             if (entry.type == RecommendType.MCP) {
                 return@withContext installMcp(entry, steps)
+            }
+            if (entry.type == RecommendType.PLUGIN) {
+                return@withContext installDshPlugin(entry, steps)
             }
 
             val payload = resolvePayload(entry, steps)
@@ -91,6 +105,7 @@ class RecommendInstaller(
                 RecommendType.PROMPT -> installPrompt(entry, payload, steps)
                 RecommendType.QUICK_MESSAGE -> installQuickMessage(entry, payload, steps)
                 RecommendType.MCP -> error("MCP 已在上面单独处理")
+                RecommendType.PLUGIN -> error("DSH 插件已在上面单独处理")
             }
         } catch (e: Exception) {
             Log.w(TAG, "install: ${entry.identity} 安装失败", e)
@@ -425,6 +440,189 @@ class RecommendInstaller(
         )
     }
 
+    private suspend fun installDshPlugin(
+        entry: RecommendEntry,
+        steps: MutableList<String>,
+    ): RecommendInstallResult {
+        steps += "DSH 插件：${entry.dshPackage.ifBlank { entry.id }} @ ${entry.version.ifBlank { "latest" }}"
+
+        // 1. 有随 APK 打包的 Air-Ko 移植版：直接装，和技能一样安装后即可用。
+        if (entry.dshPortAsset.isNotBlank()) {
+            steps += "发现内置 Air-Ko 移植版：${entry.dshPortName.ifBlank { entry.name }}"
+            val portResult = pluginManager.installFromAsset(entry.dshPortAsset)
+            val installed = portResult.getOrNull()
+            if (installed != null) {
+                steps += "已写入插件目录并自动启用：${installed.manifest.id}"
+                return RecommendInstallResult(
+                    success = true,
+                    message = "已安装 Air-Ko 移植版「${installed.manifest.name}」，插件已启用",
+                    steps = steps,
+                    identity = entry.identity,
+                )
+            }
+            steps += "内置移植版安装失败（${portResult.exceptionOrNull()?.message ?: "未知错误"}），改为下载原包"
+        }
+
+        // 2. 下载 npm tarball / GitHub 归档。
+        val payload = downloadDshPackage(entry, steps)
+        steps += "已下载插件包：${payload.size} 字节"
+
+        val files = when (val archive = extractDshArchive(payload)) {
+            is DshArchiveResult.Failure -> return RecommendInstallResult(
+                success = false,
+                message = archive.message,
+                steps = steps,
+            )
+
+            is DshArchiveResult.Success -> archive.files
+        }
+        val extracted = extractDshBundles(files)
+        steps += "包内 ${extracted.fileCount} 个文件，识别到 ${extracted.skills.size} 个技能"
+        extracted.notes.take(4).forEach { steps += it }
+
+        // 3. 技能包：每个 SKILL.md 单独落盘，保留脚本/参考资料等附属文件。
+        if (extracted.skills.isNotEmpty()) {
+            val installedNames = mutableListOf<String>()
+            extracted.skills.forEach { bundle ->
+                val saved = skillManager.saveSkillFileBytesAtomically(bundle.name, bundle.files)
+                if (saved) {
+                    installedNames += bundle.name
+                    steps += "已安装技能「${bundle.name}」（${bundle.files.size} 个文件）"
+                } else {
+                    steps += "技能「${bundle.name}」写入失败，已跳过"
+                }
+            }
+            if (installedNames.isNotEmpty()) {
+                val preview = installedNames.take(6).joinToString("、")
+                val more = if (installedNames.size > 6) " 等 ${installedNames.size} 个" else ""
+                return RecommendInstallResult(
+                    success = true,
+                    message = "已安装 DSH 技能：$preview$more（可在技能页启用）",
+                    steps = steps,
+                    identity = entry.identity,
+                )
+            }
+            steps += "所有技能都写入失败；继续尝试提示词安装"
+        }
+
+        // 4. 提示词包：只有 INSTRUCTIONS.md / FOR-AI.md 等明确指令文件时，安装成 Air-Ko 插件。
+        val prompt = extracted.prompt
+        if (prompt != null) {
+            val homepage = entry.dshHomepage.ifBlank { entry.dshRepository }
+                .takeIf { isHttpUrl(it) }
+                .orEmpty()
+            val manifest = PluginManifest(
+                id = dshPluginId(entry),
+                name = entry.name.take(120),
+                version = entry.version.take(32).ifBlank { "1.0.0" },
+                description = entry.description.take(1_000),
+                author = entry.author.take(120),
+                homepage = homepage.take(2_048),
+                prompt = prompt,
+            )
+            val json = JsonInstant.encodeToString(PluginManifest.serializer(), manifest)
+            val result = pluginManager.installFromJson(json)
+            val installed = result.getOrNull()
+            if (installed != null) {
+                steps += "已从 ${extracted.promptFile ?: "指令文件"} 安装插件并自动启用"
+                return RecommendInstallResult(
+                    success = true,
+                    message = "DSH 插件「${entry.name}」的指令已安装为 Air-Ko 插件并启用",
+                    steps = steps,
+                    identity = entry.identity,
+                )
+            }
+            steps += "提示词插件写入失败：${result.exceptionOrNull()?.message ?: "未知错误"}"
+        }
+
+        // 5. 纯 Cordis/Node 插件：如实失败，不伪造“已安装”。
+        val runtimeHint = if (looksLikeCordisRuntime(files)) {
+            "该包包含 cordis.patch.yml / dsh 代码，属于需要 Node.js 运行时的 DSH 插件。"
+        } else {
+            "该包没有 SKILL.md 或明确的指令文件。"
+        }
+        return RecommendInstallResult(
+            success = false,
+            message = "$runtimeHint Air-Ko 是 Android 原生客户端，无法执行 Cordis/Node 插件；" +
+                "你可以在 DSH 桌面端安装它，或打开详情页查看源码仓库。",
+            steps = steps,
+        )
+    }
+
+    /** npm 包先读 registry 元数据拿 tarball 与 shasum；Git 源按 commit 下 GitHub 归档。 */
+    private suspend fun downloadDshPackage(
+        entry: RecommendEntry,
+        steps: MutableList<String>,
+    ): ByteArray {
+        val sourceType = entry.dshSourceType.ifBlank {
+            if (entry.dshPackage.isNotBlank()) "npm" else ""
+        }.lowercase()
+
+        if (sourceType == "git") {
+            val repo = DshPorts.normalizeRepo(entry.dshRepository.ifBlank { entry.dshHomepage })
+                ?: throw IOException("Git 源缺少可识别的 GitHub 仓库地址")
+            val commit = entry.dshSourceCommit
+            if (commit.isBlank()) throw IOException("Git 源缺少 commit，无法固定下载版本")
+            val url = "https://codeload.github.com/$repo/zip/$commit"
+            steps += "下载 GitHub 归档：$repo@${commit.take(8)}"
+            return download(url, MAX_DSH_PACKAGE_BYTES)
+        }
+
+        if (entry.dshPackage.isBlank()) throw IOException("DSH 条目缺少 npm 包名")
+        val registry = entry.dshRegistry.ifBlank { "https://registry.npmjs.org/" }.trimEnd('/')
+        val version = entry.version.ifBlank { "latest" }
+        val metadataUrl = "$registry/${encodeNpmPackage(entry.dshPackage)}/" +
+            URLEncoder.encode(version, Charsets.UTF_8.name())
+        steps += "读取 npm 元数据：${entry.dshPackage}@$version"
+        val metadata = runCatching {
+            RecommendIndexJson.parseToJsonElement(
+                download(metadataUrl, MAX_DSH_METADATA_BYTES).toString(Charsets.UTF_8)
+            ).jsonObject
+        }.getOrElse { error ->
+            throw IOException("解析 npm 元数据失败：${error.message ?: "unknown"}", error)
+        }
+        val dist = metadata["dist"] as? JsonObject
+            ?: throw IOException("npm 元数据缺少 dist 字段")
+        val tarball = (dist["tarball"] as? kotlinx.serialization.json.JsonPrimitive)
+            ?.contentOrNull
+            ?.trim()
+            ?.takeIf { isHttpUrl(it) }
+            ?: throw IOException("npm 元数据缺少合法的 tarball 地址")
+        val expectedSha1 = (dist["shasum"] as? kotlinx.serialization.json.JsonPrimitive)
+            ?.contentOrNull?.trim().orEmpty()
+        steps += "下载 npm tarball：$tarball"
+        val bytes = download(tarball, MAX_DSH_PACKAGE_BYTES)
+        if (expectedSha1.isNotBlank()) {
+            val actual = sha1Hex(bytes)
+            if (!actual.equals(expectedSha1, ignoreCase = true)) {
+                throw IOException("npm tarball shasum 校验失败（声明 $expectedSha1，实际 $actual）")
+            }
+            steps += "npm shasum 校验通过"
+        } else {
+            steps += "npm 元数据未提供 shasum，已跳过 tarball 完整性校验"
+        }
+        return bytes
+    }
+
+    private fun dshPluginId(entry: RecommendEntry): String {
+        val base = entry.dshPackage.ifBlank { entry.id }
+            .replace(Regex("[^A-Za-z0-9_-]+"), "-")
+            .trim('-', '_')
+        return ("dsh-$base").take(64).ifBlank { "dsh-plugin" }
+    }
+
+    private fun encodeNpmPackage(name: String): String =
+        if (name.startsWith("@") && name.count { it == '/' } == 1) {
+            name.replaceFirst("/", "%2F")
+        } else {
+            name
+        }
+
+    private fun sha1Hex(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-1")
+            .digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+
     /**
      * 重新安装时不要把已有的 OAuth 令牌冲掉：index 里通常只有 `oauth.enabled/scope`，
      * 真正的 access/refresh token 是用户在本机授权后保存的。
@@ -449,13 +647,13 @@ class RecommendInstaller(
         )
     }
 
-    private suspend fun download(url: String): ByteArray {
+    private suspend fun download(url: String, maxBytes: Long = RecommendInstallerLimits.MAX_PAYLOAD_BYTES): ByteArray {
         val request = Request.Builder()
             .url(url)
             .header("Accept", "*/*")
             .build()
         return try {
-            client.newCall(request).awaitBytes()
+            client.newCall(request).awaitBytes(maxBytes)
         } catch (e: IOException) {
             // 把地址和 HTTP 状态一起带给 UI，用户才知道是哪个源、哪种失败
             throw IOException("下载 $url 失败：${e.message ?: "网络错误"}", e)
@@ -464,6 +662,8 @@ class RecommendInstaller(
 
     private companion object {
         const val TAG = "RecommendInstaller"
+        const val MAX_DSH_PACKAGE_BYTES = 32L * 1024 * 1024
+        const val MAX_DSH_METADATA_BYTES = 2L * 1024 * 1024
     }
 
     /** 技能名会当成目录名用，只允许常规字符，避免路径穿越。 */
@@ -477,7 +677,7 @@ class RecommendInstaller(
 }
 
 /** 带体积上限的下载，超限直接失败而不是把设备内存吃满。 */
-private suspend fun Call.awaitBytes(): ByteArray = suspendCancellableCoroutine { continuation ->
+private suspend fun Call.awaitBytes(maxBytes: Long): ByteArray = suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation { runCatching { cancel() } }
     enqueue(
         object : Callback {
@@ -493,8 +693,8 @@ private suspend fun Call.awaitBytes(): ByteArray = suspendCancellableCoroutine {
                         }
                         val body = response.body ?: throw IOException("响应没有 body")
                         if (body.contentLength() == 0L) throw IOException("响应为空（0 字节）")
-                        if (body.contentLength() > RecommendInstallerLimits.MAX_PAYLOAD_BYTES) {
-                            throw IOException("文件超过 ${RecommendInstallerLimits.MAX_PAYLOAD_BYTES / 1024 / 1024} MB")
+                        if (body.contentLength() > maxBytes) {
+                            throw IOException("文件超过 ${maxBytes / 1024 / 1024} MB")
                         }
                         val output = ByteArrayOutputStream()
                         val buffer = ByteArray(64 * 1024)
@@ -504,8 +704,8 @@ private suspend fun Call.awaitBytes(): ByteArray = suspendCancellableCoroutine {
                                 val read = input.read(buffer)
                                 if (read < 0) break
                                 total += read
-                                if (total > RecommendInstallerLimits.MAX_PAYLOAD_BYTES) {
-                                    throw IOException("文件超过 ${RecommendInstallerLimits.MAX_PAYLOAD_BYTES / 1024 / 1024} MB")
+                                if (total > maxBytes) {
+                                    throw IOException("文件超过 ${maxBytes / 1024 / 1024} MB")
                                 }
                                 output.write(buffer, 0, read)
                             }

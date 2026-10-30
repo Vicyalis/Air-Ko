@@ -19,7 +19,7 @@ Android 上的 LLM 聊天客户端，基于 [RikkaHub](https://github.com/rikkah
 
 - 助手系统：系统提示词、生成参数、自定义请求头、正则输出替换、任务模型（标题 / 建议 / 翻译 / OCR / 压缩）。
 - 快捷消息、提示词注入 / Lorebook、技能（SKILL.md，按需加载）。
-- **插件**：JSON 提示词包，启用后追加到系统提示词；支持从 URL 安装，内置 DSH 生态推荐列表（Archify、dsh-desktop、OpenViking 等，点击打开 GitHub）。
+- **插件**：JSON 提示词包，启用后追加到系统提示词；支持从 URL 安装。内置 DeepSeek 生态商店（Archify、DSH Desktop、OpenViking 等），并接入 DSH Open Market 与 DSH 目录：可浏览详情、下载安装技能包/指令包，Air-Ko 移植版直接启用；纯 Cordis/Node 运行时插件会明确标注并拒绝伪安装。
 - **应用语言**：跟随系统，或手动选择简体中文、繁體中文、English、日本語、한국어、Русский、العربية。
 
 ### 模型与工具

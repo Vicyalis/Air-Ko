@@ -57,25 +57,28 @@ import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Refresh01
 import me.rerere.hugeicons.stroke.Store01
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.plugin.InstalledPlugin
 import me.rerere.rikkahub.data.plugin.PluginErrorReason
 import me.rerere.rikkahub.data.plugin.PluginLoadError
+import me.rerere.rikkahub.data.recommend.RecommendType
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
 import me.rerere.rikkahub.ui.components.ui.CardGroupScope
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import me.rerere.ui.components.RikkaConfirmDialog
 import org.koin.androidx.compose.koinViewModel
 
 /**
- * Air-Ko 插件页：安装、启用、删除 JSON 提示词包，并给出 DeepSeek Harness 生态插件的外链。
+ * Air-Ko 插件页：安装、启用、删除 JSON 提示词包，并给出 DeepSeek Harness 生态插件入口。
  *
- * 这里刻意把「Air-Ko 插件」和「DSH 插件」分成两块：
- * 前者是纯提示词包，安装后只影响系统提示词；后者是 Cordis/Node 插件，Android 端只能打开仓库页。
+ * 商店里的原项目是 Cordis/Node 插件，Android 端不能执行；每个条目提供两种动作：
+ * 打开 GitHub 仓库，或安装随 APK 打包的 Air-Ko 移植版（同样是 JSON 提示词/工作流包）。
  */
 @Composable
 fun PluginsPage(vm: PluginsVM = koinViewModel()) {
@@ -84,6 +87,7 @@ fun PluginsPage(vm: PluginsVM = koinViewModel()) {
     val installState by vm.installState.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val uriHandler = LocalUriHandler.current
+    val navController = LocalNavController.current
 
     var url by rememberSaveable { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<InstalledPlugin?>(null) }
@@ -95,6 +99,10 @@ fun PluginsPage(vm: PluginsVM = koinViewModel()) {
         }
     }
     val installing = installState is PluginInstallState.Running
+    val runningKey = (installState as? PluginInstallState.Running)?.key
+    val allInstalled = RECOMMENDED_HARNESS_PLUGINS.all { entry ->
+        plugins.any { it.manifest.id == entry.id }
+    }
 
     Scaffold(
         topBar = {
@@ -188,7 +196,7 @@ fun PluginsPage(vm: PluginsVM = koinViewModel()) {
                                 onClick = { vm.installFromUrl(url) },
                                 enabled = url.isNotBlank() && !installing,
                             ) {
-                                if (installing) {
+                                if (runningKey == "url") {
                                     CircularWavyProgressIndicator(modifier = Modifier.size(ButtonDefaults.IconSize))
                                 } else {
                                     Icon(
@@ -199,7 +207,8 @@ fun PluginsPage(vm: PluginsVM = koinViewModel()) {
                                 }
                                 Text(
                                     text = stringResource(
-                                        if (installing) R.string.plugins_install_running else R.string.plugins_install_action
+                                        if (runningKey == "url") R.string.plugins_install_running
+                                        else R.string.plugins_install_action
                                     ),
                                     modifier = Modifier.padding(start = ButtonDefaults.IconSpacing),
                                 )
@@ -208,21 +217,33 @@ fun PluginsPage(vm: PluginsVM = koinViewModel()) {
                                 onClick = { vm.installSample() },
                                 enabled = !installing,
                             ) {
-                                Text(stringResource(R.string.plugins_install_sample))
+                                if (runningKey == "sample") {
+                                    CircularWavyProgressIndicator(modifier = Modifier.size(16.dp))
+                                    Text(
+                                        text = stringResource(R.string.plugins_install_running),
+                                        modifier = Modifier.padding(start = 6.dp),
+                                    )
+                                } else {
+                                    Text(stringResource(R.string.plugins_install_sample))
+                                }
                             }
                         }
                         when (val state = installState) {
-                            is PluginInstallState.Success -> Text(
-                                text = stringResource(R.string.plugins_install_success, state.pluginName),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
+                            is PluginInstallState.Success -> if (state.key == "url" || state.key == "sample") {
+                                Text(
+                                    text = stringResource(R.string.plugins_install_success, state.pluginName),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
 
-                            is PluginInstallState.Failed -> Text(
-                                text = installErrorText(state),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.error,
-                            )
+                            is PluginInstallState.Failed -> if (state.key == "url" || state.key == "sample") {
+                                Text(
+                                    text = installErrorText(state),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
 
                             else -> Unit
                         }
@@ -233,11 +254,95 @@ fun PluginsPage(vm: PluginsVM = koinViewModel()) {
             item(key = "store") {
                 CardGroup(title = { Text(stringResource(R.string.plugins_store_title)) }) {
                     item(
-                        headlineContent = { Text(stringResource(R.string.plugins_store_note_title)) },
-                        supportingContent = { Text(stringResource(R.string.plugins_store_note_desc)) },
+                        headlineContent = {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.plugins_store_note_title),
+                                    modifier = Modifier.weight(1f, fill = false),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Tag(type = TagType.INFO) {
+                                    Text(stringResource(R.string.plugins_store_dsh_tag))
+                                }
+                            }
+                        },
+                        supportingContent = {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(stringResource(R.string.plugins_store_note_desc))
+                                val state = installState
+                                if (state is PluginInstallState.Success && state.key == "all" && allInstalled) {
+                                    Text(
+                                        text = stringResource(R.string.plugins_store_install_all_success, state.count),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                        },
                         leadingContent = { CardGroupIcon(HugeIcons.Store01) },
+                        trailingContent = {
+                            TextButton(
+                                onClick = { vm.installAllBundled(RECOMMENDED_HARNESS_PLUGINS) },
+                                enabled = !installing && !allInstalled,
+                            ) {
+                                if (runningKey == "all") {
+                                    CircularWavyProgressIndicator(modifier = Modifier.size(16.dp))
+                                } else {
+                                    Icon(
+                                        HugeIcons.Download01,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                                Text(
+                                    text = stringResource(
+                                        when {
+                                            allInstalled -> R.string.plugins_store_action_all_installed
+                                            runningKey == "all" -> R.string.plugins_store_installing
+                                            else -> R.string.plugins_store_action_install_all
+                                        }
+                                    ),
+                                    modifier = Modifier.padding(start = 6.dp),
+                                )
+                            }
+                        },
+                    )
+                    item(
+                        onClick = {
+                            navController.navigate(
+                                Screen.RecommendList(RecommendType.PLUGIN.wire)
+                            )
+                        },
+                        headlineContent = {
+                            Text(stringResource(R.string.plugins_store_market_title))
+                        },
+                        supportingContent = {
+                            Text(stringResource(R.string.plugins_store_market_desc))
+                        },
+                        leadingContent = { CardGroupIcon(HugeIcons.Store01) },
+                        trailingContent = {
+                            TextButton(
+                                onClick = {
+                                    navController.navigate(
+                                        Screen.RecommendList(
+                                            RecommendType.PLUGIN.wire
+                                        )
+                                    )
+                                },
+                            ) {
+                                Text(stringResource(R.string.plugins_store_market_action))
+                            }
+                        },
                     )
                     RECOMMENDED_HARNESS_PLUGINS.forEach { entry ->
+                        val installedPlugin = plugins.firstOrNull { it.manifest.id == entry.id }
+                        val itemInstalling = runningKey == entry.id
+                        val failure = (installState as? PluginInstallState.Failed)
+                            ?.takeIf { it.key == entry.id }
                         item(
                             onClick = { openUrl(entry.homepage) },
                             headlineContent = {
@@ -252,7 +357,7 @@ fun PluginsPage(vm: PluginsVM = koinViewModel()) {
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                     Tag(type = TagType.INFO) {
-                                        Text(stringResource(R.string.plugins_store_dsh_tag))
+                                        Text(stringResource(R.string.plugins_store_port_tag))
                                     }
                                 }
                             },
@@ -260,12 +365,49 @@ fun PluginsPage(vm: PluginsVM = koinViewModel()) {
                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(text = entry.repo, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(text = stringResource(entry.descriptionRes))
+                                    if (failure != null) {
+                                        Text(
+                                            text = installErrorText(failure),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
                                 }
                             },
                             leadingContent = { CardGroupIcon(HugeIcons.Github) },
                             trailingContent = {
-                                TextButton(onClick = { openUrl(entry.homepage) }) {
-                                    Text(stringResource(R.string.plugins_store_action_open))
+                                Column(horizontalAlignment = Alignment.End) {
+                                    if (installedPlugin != null) {
+                                        Tag(type = TagType.SUCCESS) {
+                                            Text(stringResource(R.string.plugins_store_action_installed))
+                                        }
+                                    } else {
+                                        TextButton(
+                                            onClick = { vm.installBundled(entry.id, entry.assetPath) },
+                                            enabled = !installing,
+                                        ) {
+                                            if (itemInstalling) {
+                                                CircularWavyProgressIndicator(modifier = Modifier.size(16.dp))
+                                            } else {
+                                                Icon(
+                                                    HugeIcons.Download01,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp),
+                                                )
+                                            }
+                                            Text(
+                                                text = stringResource(
+                                                    if (itemInstalling) R.string.plugins_store_installing
+                                                    else R.string.plugins_store_action_download
+                                                ),
+                                                modifier = Modifier.padding(start = 6.dp),
+                                            )
+                                        }
+                                    }
+                                    // 原项目是 Cordis/Node 插件，只能到 GitHub 看；移植版才在 Android 上跑
+                                    TextButton(onClick = { openUrl(entry.homepage) }) {
+                                        Text(stringResource(R.string.plugins_store_action_open))
+                                    }
                                 }
                             },
                         )
