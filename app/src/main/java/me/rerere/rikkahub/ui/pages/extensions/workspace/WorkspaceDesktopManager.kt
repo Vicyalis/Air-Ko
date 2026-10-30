@@ -210,6 +210,24 @@ class WorkspaceDesktopManager internal constructor(
         return failure
     }
 
+    /**
+     * 探测桌面是否已安装; null 表示该方案没有探测脚本 (例如自定义桌面), 无法判断。
+     * 终端备份恢复用它决定「已有 rootfs 的工作区是否还需要补装桌面」。
+     */
+    suspend fun isDesktopInstalled(workspaceId: String): Boolean? {
+        if (!repository.hasRootfs(workspaceId)) return false
+        val plan = repository.desktopPlan(workspaceId) ?: return null
+        if (plan.probeScript == null) return null
+        return try {
+            probeInstalled(workspaceId, plan)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Log.e(TAG, "Failed to probe desktop install: workspace=$workspaceId", error)
+            false
+        }
+    }
+
     private suspend fun performInstall(workspaceId: String): WorkspaceDesktopFailure? {
         if (!repository.hasRootfs(workspaceId)) {
             return WorkspaceDesktopFailure(WorkspaceDesktopFailure.Kind.ROOTFS_MISSING)

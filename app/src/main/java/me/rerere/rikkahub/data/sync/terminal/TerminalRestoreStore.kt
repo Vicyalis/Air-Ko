@@ -115,7 +115,7 @@ internal class TerminalRestoreStore(context: Context) {
         }
 
         /**
-         * 校验 staging 里的 workspaces.json, 并把标记写进 staging 根目录。
+         * 校验 staging 里的 workspaces.json, 生成待恢复标记。
          * 返回 null 表示备份里没有终端数据 (旧备份), 调用方应清掉旧的 pending。
          */
         fun buildMarker(stagingRoot: File, json: Json): TerminalRestoreMarker? {

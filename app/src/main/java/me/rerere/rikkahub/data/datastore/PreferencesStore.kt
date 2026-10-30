@@ -193,7 +193,9 @@ class SettingsStore internal constructor(
         // Air-Ko 插件（文件在 filesDir/plugins，这里只存启用状态）
         val ENABLED_PLUGIN_IDS = stringPreferencesKey("enabled_plugin_ids")
 
-val STARTUP_TARGET = stringPreferencesKey("startup_target")
+        val STARTUP_TARGET = stringPreferencesKey("startup_target")
+        val STARTUP_WORKSPACE_ID = stringPreferencesKey("startup_workspace_id")
+        val HARNESS = stringPreferencesKey("harness")
 
         // Uses the same DataStore singleton without starting settings flows or requiring Koin.
         internal suspend fun restoreBeforeInitialization(context: Context, settings: Settings, launchCount: Int) {

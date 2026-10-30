@@ -118,7 +118,15 @@ class GenerationLoop(
 
         // 插件提示词整轮生成只读一次；没有启用插件时 buildPromptSection 直接返回空串，不碰磁盘
         val pluginPrompt = if (includePlugins) {
-            pluginManager.buildPromptSection(settings.enabledPluginIds)
+            try {
+                pluginManager.buildPromptSection(settings.enabledPluginIds)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // 插件读取失败不能影响正常生成
+                Log.w(TAG, "Failed to build plugin prompt", e)
+                ""
+            }
         } else {
             ""
         }

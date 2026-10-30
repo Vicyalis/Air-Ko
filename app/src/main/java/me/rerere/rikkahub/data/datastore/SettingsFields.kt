@@ -160,7 +160,9 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
         json(MODEL_PRICE_OVERRIDES, Settings::modelPriceOverrides) { copy(modelPriceOverrides = it) },
         // Air-Ko 插件启用状态
         json(ENABLED_PLUGIN_IDS, Settings::enabledPluginIds) { copy(enabledPluginIds = it) },
-    plain(STARTUP_TARGET, Settings::startupTarget) { copy(startupTarget = it) },
+        plain(STARTUP_TARGET, Settings::startupTarget) { copy(startupTarget = it) },
+        plain(STARTUP_WORKSPACE_ID, Settings::startupWorkspaceId) { copy(startupWorkspaceId = it) },
+        json(HARNESS, Settings::harness) { copy(harness = it) },
     )
 }
 

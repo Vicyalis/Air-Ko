@@ -151,7 +151,7 @@ private val SAMPLE = Settings(
     s3Config = S3Config(bucket = "backup"),
     uploadS3Config = S3Config(bucket = "upload"),
     mediaGenerationProviders = listOf(MediaGenerationProviderSetting.OpenAI(id = id(9))),
-    ttsProviders = DEFAULT_TTS_PROVIDERS.take(1),
+    ttsProviders = emptyList(),
     selectedTTSProviderId = id(10),
     defaultTTSPlaybackSpeed = 1.5f,
     asrProviders = listOf(ASRProviderSetting.OpenAIRealtime(id = id(11))),
@@ -174,6 +174,9 @@ private val SAMPLE = Settings(
         PriceOverride(match = "deepseek-*", input = 1.0, output = 2.0, cached = 0.1, currency = "CNY"),
     ),
     startupTarget = "terminal",
+    startupWorkspaceId = "workspace",
+    harness = HarnessSetting(customEnabled = true, maxSteps = 64),
+    enabledPluginIds = setOf("demo-plugin"),
 )
 
 private val STORED_KEYS = setOf(
@@ -232,5 +235,8 @@ private val STORED_KEYS = setOf(
     "device_agent_auto_approve",
     "device_control_show_indicator",
     "model_price_overrides",
+    "enabled_plugin_ids",
     "startup_target",
+    "startup_workspace_id",
+    "harness",
 )

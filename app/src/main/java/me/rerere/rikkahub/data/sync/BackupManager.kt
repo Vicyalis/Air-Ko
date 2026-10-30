@@ -104,19 +104,21 @@ class BackupManager(
      * 终端工作区元数据 + /workspace 用户文件。
      *
      * rootfs 本身不进包 (动辄几百 MB); 恢复时按 distroId 重新下载同一发行版。
-     * 超过数量/体积上限时只跳过剩余文件, 元数据仍然保留, 避免一个超大文件导致整个备份失败。
+     * 超过数量/体积上限时直接失败, 避免静默漏掉用户文件。
      */
     private suspend fun writeTerminalBackup(zip: ZipOutputStream) {
         val workspaces = database.workspaceDao().getAll()
             .filter { TerminalRestoreStore.isValidWorkspaceId(it.id) }
         val infos = workspaces.map { it.toTerminalInfo() }
+        require(infos.size <= TerminalBackup.MAX_WORKSPACES) {
+            "Too many workspaces to include in a terminal backup"
+        }
         zip.putNextEntry(ZipEntry(TerminalBackup.ARCHIVE_WORKSPACES))
         zip.write(json.encodeToString(infos).toByteArray(Charsets.UTF_8))
         zip.closeEntry()
 
         var fileCount = 0
         var totalBytes = 0L
-        var limitLogged = false
         for (workspace in workspaces) {
             if (!TerminalRestoreStore.isValidWorkspaceId(workspace.id)) {
                 Log.w(TAG, "Skip terminal backup for invalid workspace id: ${workspace.id}")
@@ -133,15 +135,12 @@ class BackupManager(
             for (file in files) {
                 currentCoroutineContext().ensureActive()
                 val length = file.length()
-                if (fileCount >= TerminalBackup.MAX_FILES ||
-                    length > TerminalBackup.MAX_FILE_BYTES ||
-                    totalBytes + length > TerminalBackup.MAX_TOTAL_BYTES
+                require(
+                    fileCount < TerminalBackup.MAX_FILES &&
+                        length <= TerminalBackup.MAX_FILE_BYTES &&
+                        totalBytes + length <= TerminalBackup.MAX_TOTAL_BYTES
                 ) {
-                    if (!limitLogged) {
-                        Log.w(TAG, "Terminal backup limit reached; remaining files are skipped")
-                        limitLogged = true
-                    }
-                    continue
+                    "Terminal workspace files exceed the backup limit; uncheck Terminal info or reduce workspace files"
                 }
                 val relative = file.relativeTo(filesDir).invariantSeparatorsPath
                 PendingRestore.resolveInside(filesDir, relative)
@@ -185,10 +184,10 @@ class BackupManager(
         includeTerminal: Boolean = false,
     ) =
         withContext(Dispatchers.IO) {
-            check(!TerminalRestoreStore.isRestoring.get()) {
-                "A terminal restore is already running"
-            }
             restoreMutex.withLock {
+                check(!TerminalRestoreStore.isRestoring.get()) {
+                    "A terminal restore is already running"
+                }
                 val restore = pendingRestore(context)
                 val terminalStore = TerminalRestoreStore(context)
                 val staging = restore.createStagingDirectory()
@@ -339,10 +338,11 @@ class BackupManager(
             }
         }
 
-    private fun copyLimited(input: InputStream, output: OutputStream, maxBytes: Long): Long {
+    private suspend fun copyLimited(input: InputStream, output: OutputStream, maxBytes: Long): Long {
         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
         var total = 0L
         while (true) {
+            currentCoroutineContext().ensureActive()
             val read = input.read(buffer)
             if (read < 0) break
             total += read
@@ -361,9 +361,17 @@ class BackupManager(
         return true
     }
 
-    private fun addFile(zip: ZipOutputStream, file: File, name: String) {
+    private suspend fun addFile(zip: ZipOutputStream, file: File, name: String) {
         zip.putNextEntry(ZipEntry(name))
-        file.inputStream().use { it.copyTo(zip) }
+        file.inputStream().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val read = input.read(buffer)
+                if (read < 0) break
+                zip.write(buffer, 0, read)
+            }
+        }
         zip.closeEntry()
     }
 
