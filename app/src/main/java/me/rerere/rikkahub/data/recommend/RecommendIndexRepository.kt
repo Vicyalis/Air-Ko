@@ -320,6 +320,8 @@ class RecommendIndexRepository(
  * 支持超时取消的 OkHttp 请求：协程被取消时顺手 `call.cancel()`，
  * 否则设置页来回切时会在后台堆积一批没人收的请求。
  */
+private const val MAX_INDEX_BYTES = 12L * 1024 * 1024
+
 private suspend fun Call.awaitBody(): String = suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation { runCatching { cancel() } }
     enqueue(
@@ -334,9 +336,24 @@ private suspend fun Call.awaitBody(): String = suspendCancellableCoroutine { con
                         if (!response.isSuccessful) {
                             throw IOException("HTTP ${response.code} ${response.message}".trim())
                         }
-                        val body = response.body?.string().orEmpty()
-                        if (body.isBlank()) throw IOException("响应内容为空（0 字节）")
-                        if (continuation.isActive) continuation.resume(body)
+                        val body = response.body ?: throw IOException("响应没有 body")
+                        val output = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(64 * 1024)
+                        var total = 0L
+                        body.byteStream().use { input ->
+                            while (true) {
+                                val read = input.read(buffer)
+                                if (read < 0) break
+                                total += read
+                                if (total > MAX_INDEX_BYTES) {
+                                    throw IOException("index 超过 ${MAX_INDEX_BYTES / 1024 / 1024} MB，已拒绝下载")
+                                }
+                                output.write(buffer, 0, read)
+                            }
+                        }
+                        val text = output.toString(Charsets.UTF_8.name())
+                        if (text.isBlank()) throw IOException("响应内容为空（0 字节）")
+                        if (continuation.isActive) continuation.resume(text)
                     } catch (e: Exception) {
                         if (continuation.isActive) continuation.resumeWithException(e)
                     }
