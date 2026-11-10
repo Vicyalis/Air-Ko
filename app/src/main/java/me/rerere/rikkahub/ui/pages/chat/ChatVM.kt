@@ -31,6 +31,8 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.model.localFileUrls
+import me.rerere.rikkahub.device.DeviceControlSessionGuard
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
@@ -104,11 +106,17 @@ class ChatVM(
     override fun onCleared() {
         voiceSession.stop()
         super.onCleared()
-        // 临时对话退出即删除，不进入历史记录
+        DeviceControlSessionGuard.end(context, _conversationId.toString())
+        // 临时对话退出即删除，不进入历史记录；输入框里尚未发送的附件与队列附件也要一起清理。
         if (temporary) {
             val snapshot = conversation.value
+            val unsentFiles = inputState.messageContent.localFileUrls()
+            val queuedFiles = messageQueue.value.messages.flatMap { it.parts }.localFileUrls()
             appScope.launch {
                 runCatching { conversationRepo.deleteConversation(snapshot) }
+                runCatching {
+                    filesManager.deleteChatFiles((unsentFiles + queuedFiles).map { it.toUri() })
+                }
             }
         }
         // 移除对话引用

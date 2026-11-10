@@ -44,6 +44,14 @@ data class WorkspaceEntity(
     val desktopCustomCommand: String = "",
     @ColumnInfo("desktop_custom_port", defaultValue = "0")
     val desktopCustomPort: Int = 0,
+    // Android 共享目录；空串表示仍使用 App 私有 files 目录。
+    @ColumnInfo("shared_dir_path", defaultValue = "")
+    val sharedDirPath: String = "",
+    @ColumnInfo("shared_dir_mode", defaultValue = "bind")
+    val sharedDirMode: String = "bind",
+    // 工作区级“允许全部命令”：工作区工具与设备控制都不再逐次审批。
+    @ColumnInfo("allow_all_tools", defaultValue = "0")
+    val allowAllTools: Boolean = false,
 ) {
     /** 数据库里存的是 [WorkspaceDesktop.id]; 旧值/脏数据一律退回 [WorkspaceDesktop.NONE] */
     fun desktopScheme(): WorkspaceDesktop = WorkspaceDesktop.fromId(desktop)

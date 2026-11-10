@@ -32,6 +32,7 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.device.DeviceControlService
 import me.rerere.rikkahub.device.DeviceControlState
+import me.rerere.rikkahub.device.DeviceControlSessionGuard
 import me.rerere.rikkahub.device.DeviceControlAudit
 import me.rerere.rikkahub.device.DeviceControlMemGuard
 import me.rerere.rikkahub.device.DeviceControlNotifier
@@ -2129,9 +2130,10 @@ internal class DeviceControlTools(
         name = "device_acttest",
         description = """
             Run an end-to-end action self-test on Air-Ko's own tiny test window (takes about 5 seconds and
-            briefly takes over the screen): tap, long-press, type, swipe and back - then report the
-            window's own proof (taps counted, the text it received, whether it closed). Use this to check
-            that device control really works on this phone instead of experimenting on the user's apps.
+            briefly takes over the screen): tap, long-press, type and swipe - then report the
+            window's own proof (taps counted and the text it received). The window closes itself without
+            sending a system Back. Use this to check that device control really works on this phone
+            instead of experimenting on the user's apps.
         """.trimIndent().replace("\n", " "),
         parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
         needsApproval = approval(DEVICE_APPROVAL_DEFAULT),
@@ -2149,7 +2151,6 @@ internal class DeviceControlTools(
                                 put("tap_count", result.tapCount)
                                 put("typed", result.typed)
                                 put("typed_expected", result.typedExpected)
-                                put("window_closed", result.windowClosed)
                                 put("steps", buildJsonArray { result.steps.forEach { add(it) } })
                                 put("message", result.message)
                             }
@@ -2341,6 +2342,7 @@ private suspend fun DeviceControlService.runDeviceChain(
     val startedAt = System.currentTimeMillis()
     var done = 0
     for ((index, element) in steps.withIndex()) {
+        DeviceControlSessionGuard.throwIfCurrentPaused()
         val step = element as? JsonObject
             ?: return chainStop(
                 context, detail, index + 1, "(empty step)",

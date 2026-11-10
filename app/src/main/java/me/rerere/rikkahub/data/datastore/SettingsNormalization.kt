@@ -40,7 +40,7 @@ internal fun Settings.withBuiltInDefaults(): Settings {
             providers.add(defaultProvider.copyProvider())
         }
     }
-    // Air-Ko 只保留 8 家预置供应商：清掉旧版本存下来的、用户从未配置过的其它内置预设。
+    // Air-Ko 只保留 9 家预置供应商：清掉旧版本存下来的、用户从未配置过的其它内置预设。
     // 注意 builtIn 是 @Transient（反序列化后恒为 false），只能按「已移除的预置 id」精确匹配；
     // 填过 API Key 或自己加过模型的保留，避免误删用户数据。
     providers = providers.filterNot { provider ->

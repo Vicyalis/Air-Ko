@@ -150,6 +150,12 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_display_page_send_on_enter_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_display_page_send_on_enter_title)) },
                     )
+                    switchItem(
+                        checked = displaySetting.drawerOpenByDefault,
+                        onCheckedChange = { updateDisplaySetting(displaySetting.copy(drawerOpenByDefault = it)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_drawer_default_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_drawer_default_title)) },
+                    )
                 }
             }
 

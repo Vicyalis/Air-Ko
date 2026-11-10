@@ -21,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -50,8 +51,10 @@ import me.rerere.rikkahub.data.skills.SkillManager
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.SearchMode
 import me.rerere.rikkahub.ui.components.ai.completion.buildMentionCompletionProviders
+import me.rerere.rikkahub.ui.components.ai.rememberChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.pages.chat.ChatFilesPickerSheet
 import me.rerere.rikkahub.ui.pages.chat.ChatList
 import me.rerere.rikkahub.ui.pages.chat.ChatVM
 import me.rerere.ui.toast.ToastType
@@ -198,8 +201,13 @@ private fun FloatingChatContent(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
+    var showFilesSheet by remember { mutableStateOf(false) }
+    val attachmentPickerActions = rememberChatAttachmentPickerActions(
+        inputState = inputState,
+        setting = settings,
+        onAttachmentAdded = { showFilesSheet = false },
+    )
     val selectModelMessage = stringResource(R.string.desktop_floating_select_model)
-    val attachmentsHint = stringResource(R.string.desktop_floating_attachments_hint)
     val skillManager: SkillManager = koinInject()
     val pluginManager: PluginManager = koinInject()
     val installedPlugins by pluginManager.installed.collectAsStateWithLifecycle()
@@ -409,8 +417,22 @@ private fun FloatingChatContent(
                 vm.updateSettings { it.copy(searchServiceSelected = index) }
             },
             onMoreClick = {
-                toaster.show(attachmentsHint, type = ToastType.Info)
+                showFilesSheet = true
             },
+        )
+    }
+
+    if (showFilesSheet) {
+        ChatFilesPickerSheet(
+            inputState = inputState,
+            setting = settings,
+            conversation = conversation,
+            assistant = assistant,
+            chatModel = chatModel,
+            vm = vm,
+            attachmentPickerActions = attachmentPickerActions,
+            onStartVoiceMode = null,
+            onDismiss = { showFilesSheet = false },
         )
     }
 }

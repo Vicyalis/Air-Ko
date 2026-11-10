@@ -1,14 +1,21 @@
 package me.rerere.rikkahub.data.repository
 
 import android.util.Log
+import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
@@ -22,13 +29,10 @@ import me.rerere.workspace.WorkspaceDesktopCatalog
 import me.rerere.workspace.WorkspaceDesktopPlan
 import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceManager
+import me.rerere.workspace.WorkspaceSharedDirMode
 import me.rerere.workspace.WorkspaceShellStatus
 import me.rerere.workspace.WorkspaceStorageArea
 import java.io.ByteArrayOutputStream
-import java.io.File
-import java.io.InputStream
-import java.io.OutputStream
-import java.nio.file.Files
 import kotlin.uuid.Uuid
 
 class WorkspaceRepository(
@@ -36,7 +40,35 @@ class WorkspaceRepository(
     private val manager: WorkspaceManager,
     private val rootfsInstaller: RootfsInstaller,
     private val settingsStore: SettingsStore,
+    private val appScope: AppScope,
 ) {
+    init {
+        // 进程重启后先把每个工作区的共享目录配置灌回 WorkspaceManager，
+        // 这样文件工具、终端和 Web API 在第一次访问前就使用正确目录。
+        appScope.launch(Dispatchers.IO) {
+            runCatching {
+                dao.listFlow().collect { workspaces ->
+                    workspaces.forEach(::applySharedDirConfig)
+                }
+            }.onFailure { Log.w(TAG, "observe shared dirs failed", it) }
+        }
+    }
+
+    private fun applySharedDirConfig(workspace: WorkspaceEntity) {
+        if (workspace.sharedDirPath.isBlank()) {
+            manager.clearSharedDir(workspace.root)
+            return
+        }
+        runCatching {
+            manager.configureSharedDir(
+                root = workspace.root,
+                target = File(workspace.sharedDirPath),
+                mode = WorkspaceSharedDirMode.fromWire(workspace.sharedDirMode),
+            )
+        }.onFailure {
+            Log.w(TAG, "applySharedDirConfig failed: ${workspace.id}", it)
+        }
+    }
     fun listFlow(): Flow<List<WorkspaceEntity>> = dao.listFlow()
 
     suspend fun checkIntegrity() = withContext(Dispatchers.IO) {
@@ -62,7 +94,9 @@ class WorkspaceRepository(
         }
     }
 
-    suspend fun getById(id: String): WorkspaceEntity? = dao.getById(id)
+    suspend fun getById(id: String): WorkspaceEntity? = withContext(Dispatchers.IO) {
+        dao.getById(id)?.also(::applySharedDirConfig)
+    }
 
     suspend fun create(
         name: String,
@@ -145,6 +179,99 @@ class WorkspaceRepository(
         )
         return candidates.firstOrNull { !isNameTaken(it, excludeId = id) } ?: base
     }
+
+    /**
+     * 把工作区文件区切换到 Android 共享目录，并把现有文件迁移过去。
+     *
+     * [mode] 为 SYMLINK 时，App 私有 `files` 会被替换成指向共享目录的符号链接；
+     * PRoot 始终绑定共享目录真实路径。调用方应先确认已获得所有文件访问权限。
+     */
+    suspend fun updateSharedDir(
+        id: String,
+        path: String,
+        mode: WorkspaceSharedDirMode,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id)
+            ?: return@withContext Result.failure(IllegalArgumentException("Workspace not found: $id"))
+        val target = validateSharedDir(path)
+            ?: return@withContext Result.failure(IllegalArgumentException("共享目录无效：$path"))
+        runCatching {
+            val current = manager.filesDir(workspace.root)
+            val currentCanonical = runCatching { current.canonicalFile }.getOrDefault(current)
+            if (target.path.startsWith(currentCanonical.path + File.separator)) {
+                error("不能选择当前工作区目录的子目录")
+            }
+            if (currentCanonical != target) {
+                copyDirectoryContents(current, target)
+            }
+            if (mode == WorkspaceSharedDirMode.SYMLINK) {
+                val private = manager.privateFilesDir(workspace.root)
+                if (Files.isSymbolicLink(private.toPath())) {
+                    Files.deleteIfExists(private.toPath())
+                } else if (private.exists()) {
+                    private.deleteRecursively()
+                }
+            }
+            manager.configureSharedDir(workspace.root, target, mode)
+            dao.setSharedDir(
+                id = id,
+                path = target.absolutePath,
+                mode = mode.wire,
+                updatedAt = System.currentTimeMillis(),
+            )
+            Unit
+        }
+    }
+
+    private fun validateSharedDir(path: String): File? {
+        val raw = path.trim()
+        if (raw.isEmpty()) return null
+        val target = File(raw)
+        if (!target.isAbsolute) return null
+        val canonical = runCatching { target.canonicalFile }.getOrNull() ?: return null
+        val publicRoot = runCatching { android.os.Environment.getExternalStorageDirectory()?.canonicalFile }
+            .getOrNull()
+        if (publicRoot != null && canonical == publicRoot) return null
+        val appRoot = runCatching { manager.workspaceDir("__probe__").parentFile?.canonicalFile }
+            .getOrNull()
+        if (appRoot != null && canonical.path.startsWith(appRoot.path + File.separator)) return null
+        if (!canonical.exists() && !canonical.mkdirs() && !canonical.isDirectory) return null
+        if (!canonical.isDirectory) return null
+        return canonical
+    }
+
+    /** 递归复制文件；目标已存在的文件保留（避免覆盖用户外部修改），仅补缺失内容。 */
+    private suspend fun copyDirectoryContents(source: File, target: File) {
+        if (!source.exists()) return
+        val sourceRoot = runCatching { source.canonicalFile }.getOrDefault(source)
+        target.mkdirs()
+        val stack = ArrayDeque<File>()
+        stack.add(sourceRoot)
+        while (stack.isNotEmpty()) {
+            currentCoroutineContext().ensureActive()
+            val dir = stack.removeLast()
+            val children = dir.listFiles() ?: continue
+            for (child in children) {
+                currentCoroutineContext().ensureActive()
+                if (Files.isSymbolicLink(child.toPath())) continue
+                if (child.isDirectory) {
+                    stack.add(child)
+                    continue
+                }
+                if (!child.isFile) continue
+                val relative = child.relativeTo(sourceRoot).invariantSeparatorsPath
+                val destination = File(target, relative)
+                if (destination.exists()) continue
+                destination.parentFile?.mkdirs()
+                runInterruptible {
+                    Files.copy(child.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                }
+            }
+        }
+    }
+
+    suspend fun setAllowAllTools(id: String, allow: Boolean): Boolean =
+        dao.setAllowAllTools(id, allow, System.currentTimeMillis()) > 0
 
     /**
      * 把备份 staging 里的文件树复制回工作区的 /workspace 目录。

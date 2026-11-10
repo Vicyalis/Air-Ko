@@ -294,6 +294,14 @@ class WorkspaceDetailVM(
         }
     }
 
+    fun setAllowAllTools(allow: Boolean) {
+        viewModelScope.launch {
+            val workspace = state.value.workspace ?: return@launch
+            repository.setAllowAllTools(workspace.id, allow)
+            loadWorkspace()
+        }
+    }
+
     /** 更新桌面方案; 保存后重新加载实体, 详情页的桌面卡片据此重新探测 */
     fun updateDesktop(desktop: WorkspaceDesktop, customCommand: String, customPort: Int) {
         viewModelScope.launch {

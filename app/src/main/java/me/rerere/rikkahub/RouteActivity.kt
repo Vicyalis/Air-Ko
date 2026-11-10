@@ -356,10 +356,12 @@ class RouteActivity : ComponentActivity() {
             val workspace = workspaces.firstOrNull { it.id == settings.startupWorkspaceId }
                 ?: workspaces.firstOrNull()
                 ?: return@LaunchedEffect
-            backStack[0] = when (target) {
-                "desktop" -> Screen.WorkspaceDesktop(workspace.id)
-                else -> Screen.WorkspaceTerminal(workspace.id)
-            }
+            backStack.add(
+                when (target) {
+                    "desktop" -> Screen.WorkspaceDesktop(workspace.id)
+                    else -> Screen.WorkspaceTerminal(workspace.id)
+                }
+            )
         }
 
         SharedTransitionLayout {

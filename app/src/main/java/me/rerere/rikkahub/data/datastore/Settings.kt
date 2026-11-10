@@ -227,6 +227,8 @@ data class DisplaySetting(
     val pasteLongTextThreshold: Int = 1000,
     val sendOnEnter: Boolean = false,
     val enableAutoScroll: Boolean = true,
+    /** 大屏进入聊天页时是否自动展开悬浮侧栏；默认关闭，避免返回主页时自己弹出。 */
+    val drawerOpenByDefault: Boolean = false,
     val enableLatexRendering: Boolean = true,
     val enableQuoteHighlight: Boolean = false,
     val enableBlurEffect: Boolean = false,

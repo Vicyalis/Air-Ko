@@ -6,6 +6,7 @@ import java.io.OutputStream
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.util.concurrent.ConcurrentHashMap
 
 class WorkspaceManager(
     private val baseDir: File,
@@ -16,6 +17,9 @@ class WorkspaceManager(
     private val runtimeBaseDir: File? = null,
 ) {
     private val fileSystem = WorkspaceFileSystem(config)
+
+    // 每个工作区可单独指向 Android 共享目录；null/缺失表示继续使用 App 私有 files 目录。
+    private val sharedDirs = ConcurrentHashMap<String, SharedDir>()
 
     // 按 target 长度降序, 保证 /a/b 优先于 /a 匹配
     private val sortedBindMounts = bindMounts.sortedByDescending { it.target.trimEnd('/').length }
@@ -37,7 +41,63 @@ class WorkspaceManager(
         return File(baseDir, root)
     }
 
-    fun filesDir(root: String): File = File(workspaceDir(root), FILES_DIR)
+    /** App 私有工作区文件目录；即使配置了共享目录也保留这个路径，便于迁移/回退。 */
+    fun privateFilesDir(root: String): File = File(workspaceDir(root), FILES_DIR)
+
+    /**
+     * 配置工作区文件区指向 Android 共享目录。
+     *
+     * [WorkspaceSharedDirMode.BIND] 直接返回共享目录；
+     * [WorkspaceSharedDirMode.SYMLINK] 让 App 私有 `files` 成为指向共享目录的符号链接。
+     * PRoot 始终绑定共享目录的真实路径，避免 proot 对宿主符号链接处理不一致。
+     */
+    fun configureSharedDir(root: String, target: File, mode: WorkspaceSharedDirMode) {
+        requireValidRoot(root)
+        target.mkdirs()
+        sharedDirs[root] = SharedDir(target, mode)
+        if (mode == WorkspaceSharedDirMode.SYMLINK) {
+            ensureSymlink(root, target)
+        }
+    }
+
+    fun clearSharedDir(root: String) {
+        sharedDirs.remove(root)
+    }
+
+    fun sharedDir(root: String): SharedDir? = sharedDirs[root]
+
+    fun filesDir(root: String): File {
+        val shared = sharedDirs[root]
+        if (shared == null) return privateFilesDir(root)
+        return when (shared.mode) {
+            WorkspaceSharedDirMode.BIND -> shared.path
+            WorkspaceSharedDirMode.SYMLINK -> {
+                ensureSymlink(root, shared.path) ?: shared.path
+            }
+        }
+    }
+
+    /** PRoot/终端使用真实目录，不把宿主 symlink 交给 proot 解析。 */
+    fun shellFilesDir(root: String): File = sharedDirs[root]?.path ?: filesDir(root)
+
+    private fun ensureSymlink(root: String, target: File): File? {
+        val link = privateFilesDir(root)
+        return runCatching {
+            if (Files.isSymbolicLink(link.toPath())) {
+                val current = link.canonicalFile
+                if (current == target.canonicalFile) return@runCatching link
+                Files.delete(link.toPath())
+            } else if (link.exists()) {
+                // 已有真实目录时不擅自删除；调用方应先迁移。这里退回真实目标，避免丢数据。
+                return@runCatching null
+            }
+            link.parentFile?.mkdirs()
+            Files.createSymbolicLink(link.toPath(), target.toPath())
+            link
+        }.getOrNull()
+    }
+
+    data class SharedDir(val path: File, val mode: WorkspaceSharedDirMode)
 
     fun linuxDir(root: String): File = File(workspaceDir(root), LINUX_DIR)
 
@@ -49,6 +109,14 @@ class WorkspaceManager(
 
     fun deleteWorkspace(root: String): Boolean {
         runtimeDir(root)?.deleteRecursively()
+        sharedDirs.remove(root)
+        // 删除工作区目录前先摘掉指向 Android 共享目录的符号链接，
+        // 否则 deleteRecursively 可能顺着链接删掉用户的共享文件。
+        val privateFiles = privateFilesDir(root)
+        if (Files.isSymbolicLink(privateFiles.toPath())) {
+            runCatching { Files.deleteIfExists(privateFiles.toPath()) }
+            if (Files.isSymbolicLink(privateFiles.toPath())) return false
+        }
         return workspaceDir(root).deleteRecursively()
     }
 
@@ -234,7 +302,8 @@ class WorkspaceManager(
         detachedOutputPath: String? = null,
     ): WorkspaceCommandResult {
         require(command.isNotBlank()) { "Command is required" }
-        val workingDir = fileSystem.resolve(filesDir(root), cwd)
+        val commandFilesDir = shellFilesDir(root)
+        val workingDir = fileSystem.resolve(commandFilesDir, cwd)
         require(workingDir.exists()) { "Working directory does not exist: $cwd" }
         require(workingDir.isDirectory) { "Working path is not a directory: $cwd" }
 
@@ -243,7 +312,7 @@ class WorkspaceManager(
                 root = root,
                 command = command,
                 cwd = cwd,
-                filesDir = filesDir(root),
+                filesDir = commandFilesDir,
                 linuxDir = linuxDir(root),
                 tempDir = tempDir(root),
                 workingDir = workingDir,

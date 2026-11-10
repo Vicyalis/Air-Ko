@@ -23,23 +23,24 @@ import java.io.ByteArrayOutputStream
 private const val SHELL_TIMEOUT_MAX_SECONDS = 600L
 private const val MAX_READ_FILE_BYTES = 8L * 1024 * 1024
 
-// 默认安全优先：工作区工具在助手总开关关闭时都需要确认。
-// 用户在工作区详情里的单工具覆盖仍然优先；助手总开关打开后全部直接执行。
+// 默认允许直接执行：工作区工具不再逐次确认；需要审批时可在工作区详情里逐项关闭，
+// 或使用助手总开关/工作区“允许全部命令”。
 val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
-    "workspace_read_file" to true,
-    "workspace_write_file" to true,
-    "workspace_edit_file" to true,
-    "workspace_shell" to true,
+    "workspace_read_file" to false,
+    "workspace_write_file" to false,
+    "workspace_edit_file" to false,
+    "workspace_shell" to false,
 )
 
 fun resolveWorkspaceToolApproval(
     name: String,
     overrides: Map<String, Boolean>,
     autoApprove: Boolean = false,
-): Boolean = if (autoApprove) {
+    allowAll: Boolean = false,
+): Boolean = if (autoApprove || allowAll) {
     false
 } else {
-    overrides[name] ?: WorkspaceToolDefaultApprovals[name] ?: true
+    overrides[name] ?: WorkspaceToolDefaultApprovals[name] ?: false
 }
 
 suspend fun createWorkspaceTools(
@@ -47,10 +48,11 @@ suspend fun createWorkspaceTools(
     workspaceRepository: WorkspaceRepository,
     cwd: String? = null,
     autoApprove: Boolean = false,
+    allowAll: Boolean = false,
 ): List<Tool> {
     if (workspaceId.isNullOrBlank()) return emptyList()
     val approvalOverrides = workspaceRepository.getById(workspaceId)?.toolApprovalOverrides().orEmpty()
-    fun needsApproval(name: String) = resolveWorkspaceToolApproval(name, approvalOverrides, autoApprove)
+    fun needsApproval(name: String) = resolveWorkspaceToolApproval(name, approvalOverrides, autoApprove, allowAll)
 
     val shellCwd = cwd?.removePrefix("/workspace/")?.removePrefix("/workspace")
 
@@ -59,7 +61,10 @@ suspend fun createWorkspaceTools(
         createWriteFileTool(workspaceId, ::needsApproval, autoApprove, workspaceRepository),
         createEditFileTool(workspaceId, ::needsApproval, autoApprove, workspaceRepository),
         createShellTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
-    )
+    ).let { tools ->
+        // “允许全部命令”是显式的高风险授权：连工作区可写安全区之外的文件操作也不再确认。
+        if (allowAll) tools.map { it.copy(needsApproval = { false }) } else tools
+    }
 }
 
 private val IMAGE_EXTENSIONS = setOf(

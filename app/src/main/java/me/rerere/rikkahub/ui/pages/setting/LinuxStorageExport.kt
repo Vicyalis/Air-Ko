@@ -3,8 +3,10 @@ package me.rerere.rikkahub.ui.pages.setting
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.DocumentsContract
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,7 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -61,35 +62,205 @@ import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.ui.context.LocalToaster
-import me.rerere.rikkahub.ui.hooks.readStringPreference
+import me.rerere.rikkahub.utils.fileSizeToString
 import me.rerere.ui.toast.ToastType
 import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceStorageArea
-import java.io.File
-import java.nio.file.Files
-
-internal const val LINUX_EXPORT_FOLDER_PREF_KEY = "linuxExportFolder"
-internal const val DEFAULT_LINUX_EXPORT_FOLDER = "Air-Ko!"
 
 /**
- * 导出目录名是相对 /storage/emulated/0 的路径。
- * 只允许普通相对路径：拒绝空值、绝对路径和包含 `..` 的路径，避免写到公共存储之外。
+ * 存储管理里的共享目录设置。
+ *
+ * 这里只做两件事：
+ * 1. 让用户选一个 Android 真实目录作为工作区文件区（需要所有文件访问权限）；
+ * 2. 选择绑定挂载或符号链接方式。
+ *
+ * 真正的文件迁移在 WorkspaceRepository 中完成；这个文件不再保存固定导出目录。
  */
-internal fun normalizeLinuxExportFolder(raw: String): String? {
-    val replaced = raw.trim().replace('\\', '/')
-    if (replaced.isEmpty() || replaced.startsWith('/')) return null
-    val segments = replaced
-        .split('/')
-        .filter { it.isNotBlank() && it != "." }
-    if (segments.isEmpty()) return null
-    if (segments.any { it == ".." || it.contains('\u0000') }) return null
-    return segments.joinToString("/")
+@Composable
+internal fun LinuxSharedDirectoryDialogs(
+    workspaceId: String,
+    repository: WorkspaceRepository,
+    currentPath: String,
+    currentMode: String,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit,
+) {
+    val context = LocalContext.current
+    val toaster = LocalToaster.current
+    val scope = rememberCoroutineScope()
+    var mode by remember(currentMode) {
+        mutableStateOf(me.rerere.workspace.WorkspaceSharedDirMode.fromWire(currentMode))
+    }
+    var path by remember(currentPath) { mutableStateOf(currentPath) }
+    var saving by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    val treeLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        val picked = LinuxDirectoryPicker.treeUriToDirectory(context, uri)
+        if (picked == null) {
+            error = context.getString(R.string.linux_storage_shared_dir_invalid)
+        } else {
+            path = picked
+            error = null
+        }
+    }
+    val allFilesLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+    ) {
+        if (hasLinuxExportStorageAccess(context)) {
+            treeLauncher.launch(null)
+        } else {
+            error = context.getString(R.string.linux_storage_export_permission_denied)
+        }
+    }
+    val legacyPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) treeLauncher.launch(null)
+        else error = context.getString(R.string.linux_storage_export_permission_denied)
+    }
+
+    fun pickDirectory() {
+        if (hasLinuxExportStorageAccess(context)) {
+            treeLauncher.launch(null)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            allFilesLauncher.launch(
+                android.content.Intent(
+                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:${context.packageName}"),
+                )
+            )
+        } else {
+            legacyPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
+    }
+
+    fun save() {
+        if (saving) return
+        val target = path.trim()
+        if (target.isBlank()) {
+            error = context.getString(R.string.linux_storage_shared_dir_required)
+            return
+        }
+        saving = true
+        error = null
+        scope.launch {
+            val result = repository.updateSharedDir(workspaceId, target, mode)
+            saving = false
+            result.fold(
+                onSuccess = {
+                    toaster.show(
+                        context.getString(R.string.linux_storage_shared_dir_saved),
+                        type = ToastType.Success,
+                    )
+                    onSaved()
+                },
+                onFailure = {
+                    error = it.message ?: context.getString(R.string.linux_storage_shared_dir_failed)
+                },
+            )
+        }
+    }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { if (!saving) onDismiss() },
+        title = { Text(stringResource(R.string.linux_storage_shared_dir_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(R.string.linux_storage_shared_dir_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = path.ifBlank { stringResource(R.string.linux_storage_shared_dir_not_set) },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = ::pickDirectory,
+                        enabled = !saving,
+                    ) {
+                        Text(stringResource(R.string.linux_storage_shared_dir_pick))
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.linux_storage_shared_mode_title),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    listOf(
+                        me.rerere.workspace.WorkspaceSharedDirMode.BIND to R.string.linux_storage_shared_mode_bind,
+                        me.rerere.workspace.WorkspaceSharedDirMode.SYMLINK to R.string.linux_storage_shared_mode_symlink,
+                    ).forEach { (option, label) ->
+                        Row(
+                            modifier = Modifier
+                                .clickable(enabled = !saving) { mode = option }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.RadioButton(
+                                selected = mode == option,
+                                onClick = { mode = option },
+                                enabled = !saving,
+                            )
+                            Text(stringResource(label))
+                        }
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.linux_storage_shared_mode_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                if (saving) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text(
+                            text = stringResource(R.string.linux_storage_shared_dir_migrating),
+                            modifier = Modifier.padding(start = 8.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = ::save, enabled = !saving && path.isNotBlank()) {
+                Text(stringResource(R.string.linux_storage_export_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !saving) {
+                Text(stringResource(R.string.linux_storage_page_cancel))
+            }
+        },
+    )
 }
 
-internal fun Context.readLinuxExportFolder(): String =
-    normalizeLinuxExportFolder(
-        readStringPreference(LINUX_EXPORT_FOLDER_PREF_KEY, DEFAULT_LINUX_EXPORT_FOLDER).orEmpty()
-    ) ?: DEFAULT_LINUX_EXPORT_FOLDER
+/** 选目录并转成真实文件路径；只支持本机 primary storage。 */
+internal object LinuxDirectoryPicker {
+    fun treeUriToDirectory(context: Context, uri: Uri?): String? {
+        if (uri == null) return null
+        val documentId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull() ?: return null
+        val relative = when {
+            documentId == "primary:" -> ""
+            documentId.startsWith("primary:") -> documentId.removePrefix("primary:").trim('/')
+            else -> return null
+        }
+        val root = Environment.getExternalStorageDirectory() ?: return null
+        val target = if (relative.isBlank()) root else File(root, relative)
+        return runCatching { target.canonicalPath }.getOrNull()
+    }
+}
 
 internal fun hasLinuxExportStorageAccess(context: Context): Boolean =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -99,108 +270,18 @@ internal fun hasLinuxExportStorageAccess(context: Context): Boolean =
             PackageManager.PERMISSION_GRANTED
     }
 
-internal fun linuxExportTargetDirectory(folder: String): File? {
-    val normalized = normalizeLinuxExportFolder(folder) ?: return null
-    val root = Environment.getExternalStorageDirectory() ?: return null
-    val target = File(root, normalized)
-    val canonicalRoot = runCatching { root.canonicalFile }.getOrNull() ?: return null
-    val canonicalTarget = runCatching { target.canonicalFile }.getOrNull() ?: return null
-    val rootPath = canonicalRoot.path
-    val targetPath = canonicalTarget.path
-    if (targetPath != rootPath && !targetPath.startsWith(rootPath + File.separator)) return null
-    return target
-}
-
-internal fun linuxExportTargetPath(folder: String): String {
-    val normalized = normalizeLinuxExportFolder(folder) ?: DEFAULT_LINUX_EXPORT_FOLDER
-    val root = Environment.getExternalStorageDirectory()
-    return File(root, normalized).absolutePath
-}
-
-@Composable
-internal fun LinuxStorageExportFolderDialog(
-    currentFolder: String,
-    onDismiss: () -> Unit,
-    onSave: (String) -> Unit,
-) {
-    var value by remember(currentFolder) { mutableStateOf(currentFolder) }
-    val normalized = normalizeLinuxExportFolder(value)
-    val invalid = normalized == null
-    val preview = remember(normalized) {
-        linuxExportTargetPath(normalized ?: DEFAULT_LINUX_EXPORT_FOLDER)
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.linux_storage_export_folder_dialog_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = stringResource(R.string.linux_storage_export_folder_dialog_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedTextField(
-                    value = value,
-                    onValueChange = { value = it },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    isError = invalid,
-                    placeholder = { Text(DEFAULT_LINUX_EXPORT_FOLDER) },
-                    supportingText = {
-                        Text(
-                            text = if (invalid) {
-                                stringResource(R.string.linux_storage_export_folder_invalid)
-                            } else {
-                                stringResource(R.string.linux_storage_export_folder_preview, preview)
-                            },
-                            color = if (invalid) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                    },
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { normalized?.let(onSave) },
-                enabled = normalized != null,
-            ) {
-                Text(stringResource(R.string.linux_storage_export_save))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.linux_storage_page_cancel))
-            }
-        },
-    )
-}
-
 @Composable
 internal fun LinuxStorageExportDialog(
     workspaceId: String,
     repository: WorkspaceRepository,
-    folder: String,
     onDismiss: () -> Unit,
+    onExportSelected: (List<WorkspaceFileEntry>) -> Unit,
 ) {
-    val context = LocalContext.current
-    val toaster = LocalToaster.current
-    val scope = rememberCoroutineScope()
-    val targetPath = remember(folder) { linuxExportTargetPath(folder) }
-
     var path by remember { mutableStateOf("") }
     var entries by remember { mutableStateOf<List<WorkspaceFileEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<Map<String, WorkspaceFileEntry>>(emptyMap()) }
-    var exporting by remember { mutableStateOf(false) }
-    var completed by remember { mutableStateOf(0) }
-    var total by remember { mutableStateOf(0) }
-    var currentName by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(workspaceId, path) {
         loading = true
@@ -215,7 +296,7 @@ internal fun LinuxStorageExportDialog(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: Exception) {
-            error = failure.message ?: context.getString(R.string.linux_storage_export_load_failed_generic)
+            error = failure.message
         } finally {
             loading = false
         }
@@ -240,81 +321,9 @@ internal fun LinuxStorageExportDialog(
         }
     }
 
-    fun goUp() {
-        if (path.isNotBlank()) {
-            path = path.substringBeforeLast('/', missingDelimiterValue = "")
-        }
-    }
-
-    fun startExport() {
-        if (exporting || selected.isEmpty()) return
-        val selection = selected.values.toList()
-        exporting = true
-        completed = 0
-        total = 0
-        currentName = null
-        scope.launch {
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    copySelectionToPublicFolder(
-                        context = context,
-                        repository = repository,
-                        workspaceId = workspaceId,
-                        selected = selection,
-                        targetFolder = folder,
-                        onProgress = { done, all, name ->
-                            withContext(Dispatchers.Main) {
-                                completed = done
-                                total = all
-                                currentName = name
-                            }
-                        },
-                    )
-                }
-                exporting = false
-                if (result.failed > 0) {
-                    toaster.show(
-                        message = context.getString(
-                            R.string.linux_storage_export_done_with_failures,
-                            result.copied,
-                            result.targetPath,
-                            result.failed,
-                        ),
-                        type = ToastType.Warning,
-                    )
-                } else {
-                    toaster.show(
-                        message = context.getString(
-                            R.string.linux_storage_export_done,
-                            result.copied,
-                            result.targetPath,
-                        ),
-                        type = ToastType.Success,
-                    )
-                }
-                onDismiss()
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (failure: Throwable) {
-                exporting = false
-                toaster.show(
-                    message = context.getString(
-                        R.string.linux_storage_export_failed,
-                        failure.message ?: failure.javaClass.simpleName,
-                    ),
-                    type = ToastType.Error,
-                )
-            }
-        }
-    }
-
     Dialog(
-        onDismissRequest = { if (!exporting) onDismiss() },
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            dismissOnBackPress = !exporting,
-            dismissOnClickOutside = !exporting,
-        ),
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Surface(
             modifier = Modifier
@@ -330,36 +339,32 @@ internal fun LinuxStorageExportDialog(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = stringResource(R.string.linux_storage_export_title),
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                    Text(
-                        text = stringResource(R.string.linux_storage_export_target, targetPath),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
+                Text(
+                    text = stringResource(R.string.linux_storage_export_title),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    text = stringResource(R.string.linux_storage_export_pick_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.large,
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                 ) {
                     Row(
-                        modifier = Modifier.padding(start = 4.dp, top = 4.dp, end = 4.dp, bottom = 4.dp),
+                        modifier = Modifier.padding(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         IconButton(
-                            onClick = { goUp() },
-                            enabled = path.isNotBlank() && !exporting,
+                            onClick = {
+                                if (path.isNotBlank()) path = path.substringBeforeLast('/', "")
+                            },
+                            enabled = path.isNotBlank(),
                         ) {
-                            Icon(
-                                imageVector = HugeIcons.ArrowTurnBackward,
-                                contentDescription = stringResource(R.string.linux_storage_page_up),
-                            )
+                            Icon(HugeIcons.ArrowTurnBackward, stringResource(R.string.linux_storage_page_up))
                         }
                         Text(
                             text = buildString {
@@ -372,22 +377,12 @@ internal fun LinuxStorageExportDialog(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        TextButton(
-                            onClick = { toggleAll() },
-                            enabled = entries.isNotEmpty() && !exporting,
-                        ) {
-                            Icon(
-                                imageVector = HugeIcons.CheckList,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
+                        TextButton(onClick = { toggleAll() }, enabled = entries.isNotEmpty()) {
+                            Icon(HugeIcons.CheckList, null, modifier = Modifier.size(18.dp))
                             Text(
                                 text = stringResource(
-                                    if (allSelected) {
-                                        R.string.linux_storage_export_deselect_all
-                                    } else {
-                                        R.string.linux_storage_export_select_all
-                                    }
+                                    if (allSelected) R.string.linux_storage_export_deselect_all
+                                    else R.string.linux_storage_export_select_all
                                 ),
                                 modifier = Modifier.padding(start = 4.dp),
                             )
@@ -395,45 +390,21 @@ internal fun LinuxStorageExportDialog(
                     }
                 }
 
-                if (exporting) {
-                    LinuxStorageExportProgress(
-                        completed = completed,
-                        total = total,
-                        currentName = currentName,
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                ) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     when {
                         loading -> CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .align(Alignment.Center),
+                            modifier = Modifier.size(28.dp).align(Alignment.Center),
                         )
-
                         error != null -> Text(
-                            text = stringResource(
-                                R.string.linux_storage_export_load_failed,
-                                error.orEmpty(),
-                            ),
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = stringResource(R.string.linux_storage_export_load_failed, error.orEmpty()),
                             color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .padding(16.dp),
+                            modifier = Modifier.align(Alignment.Center).padding(16.dp),
                         )
-
                         entries.isEmpty() -> Text(
                             text = stringResource(R.string.linux_storage_export_empty),
-                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.align(Alignment.Center),
                         )
-
                         else -> LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -442,7 +413,6 @@ internal fun LinuxStorageExportDialog(
                                 LinuxStorageExportRow(
                                     entry = entry,
                                     selected = entry.path in selected,
-                                    enabled = !exporting,
                                     onToggle = { toggle(entry) },
                                     onOpen = { if (entry.isDirectory) path = entry.path },
                                 )
@@ -457,31 +427,21 @@ internal fun LinuxStorageExportDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
-                        text = stringResource(
-                            R.string.linux_storage_export_selected_count,
-                            selected.size,
-                        ),
+                        text = stringResource(R.string.linux_storage_export_selected_count, selected.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(
-                        onClick = onDismiss,
-                        enabled = !exporting,
-                    ) {
+                    TextButton(onClick = onDismiss) {
                         Text(stringResource(R.string.linux_storage_page_cancel))
                     }
                     Button(
-                        onClick = { startExport() },
-                        enabled = selected.isNotEmpty() && !exporting,
+                        onClick = { onExportSelected(selected.values.toList()) },
+                        enabled = selected.isNotEmpty(),
                     ) {
-                        Icon(
-                            imageVector = HugeIcons.FileExport,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
+                        Icon(HugeIcons.FileExport, null, modifier = Modifier.size(18.dp))
                         Text(
-                            text = stringResource(R.string.linux_storage_export_start),
+                            text = stringResource(R.string.linux_storage_export_pick_target),
                             modifier = Modifier.padding(start = 4.dp),
                         )
                     }
@@ -495,22 +455,16 @@ internal fun LinuxStorageExportDialog(
 private fun LinuxStorageExportRow(
     entry: WorkspaceFileEntry,
     selected: Boolean,
-    enabled: Boolean,
     onToggle: () -> Unit,
     onOpen: () -> Unit,
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled) {
-                if (entry.isDirectory) onOpen() else onToggle()
-            },
+            .clickable { if (entry.isDirectory) onOpen() else onToggle() },
         shape = MaterialTheme.shapes.medium,
-        color = if (selected) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerLow
-        },
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Row(
             modifier = Modifier.padding(start = 12.dp, top = 4.dp, end = 4.dp, bottom = 4.dp),
@@ -524,144 +478,76 @@ private fun LinuxStorageExportRow(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Column(modifier = Modifier.weight(1f)) {
+                Text(entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    text = entry.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = if (entry.isDirectory) {
-                        stringResource(R.string.linux_storage_page_folder)
-                    } else {
-                        formatBytes(entry.sizeBytes)
-                    },
+                    text = if (entry.isDirectory) stringResource(R.string.linux_storage_page_folder)
+                    else entry.sizeBytes.fileSizeToString(),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             if (entry.isDirectory) {
                 Icon(
-                    imageVector = HugeIcons.ArrowRight01,
+                    HugeIcons.ArrowRight01,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Checkbox(
-                checked = selected,
-                onCheckedChange = { onToggle() },
-                enabled = enabled,
-            )
+            Checkbox(checked = selected, onCheckedChange = { onToggle() })
         }
     }
 }
 
-@Composable
-private fun LinuxStorageExportProgress(
-    completed: Int,
-    total: Int,
-    currentName: String?,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = if (total > 0) {
-                    stringResource(R.string.linux_storage_export_progress, completed, total)
-                } else {
-                    stringResource(R.string.linux_storage_export_preparing)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            if (total > 0) {
-                LinearProgressIndicator(
-                    progress = { completed.toFloat() / total },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            } else {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-            currentName?.let { name ->
-                Text(
-                    text = name,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
-
-private data class LinuxExportResult(
-    val copied: Int,
-    val failed: Int,
-    val targetPath: String,
-)
-
-private data class LinuxExportFile(
+private data class ExportFile(
     val sourcePath: String,
     val destination: File,
 )
 
-private data class LinuxExportPlan(
-    val files: List<LinuxExportFile>,
-    val failed: Int,
-)
-
-private suspend fun copySelectionToPublicFolder(
-    context: Context,
+internal suspend fun exportWorkspaceSelection(
     repository: WorkspaceRepository,
     workspaceId: String,
     selected: List<WorkspaceFileEntry>,
-    targetFolder: String,
+    targetRoot: File,
     onProgress: suspend (completed: Int, total: Int, name: String?) -> Unit,
-): LinuxExportResult {
-    val targetRoot = linuxExportTargetDirectory(targetFolder)
-        ?: error(context.getString(R.string.linux_storage_export_error_invalid_folder, targetFolder))
-    if (targetRoot.exists() && !targetRoot.isDirectory) {
-        error(
-            context.getString(
-                R.string.linux_storage_export_error_not_directory,
-                targetRoot.absolutePath,
+): Pair<Int, Int> = withContext(Dispatchers.IO) {
+    targetRoot.mkdirs()
+    val files = mutableListOf<ExportFile>()
+    var failed = 0
+
+    suspend fun collect(entry: WorkspaceFileEntry, destination: File) {
+        currentCoroutineContext().ensureActive()
+        if (entry.isSymbolicLink) return
+        if (!entry.isDirectory) {
+            files += ExportFile(entry.path, destination)
+            return
+        }
+        destination.mkdirs()
+        val children = runCatching {
+            repository.listFiles(
+                id = workspaceId,
+                area = WorkspaceStorageArea.FILES,
+                path = entry.path,
             )
-        )
-    }
-    if (!targetRoot.exists() && !targetRoot.mkdirs() && !targetRoot.isDirectory) {
-        error(
-            context.getString(
-                R.string.linux_storage_export_error_create_failed,
-                targetRoot.absolutePath,
-            )
-        )
+        }.getOrElse {
+            failed++
+            emptyList()
+        }
+        children.forEach { child ->
+            collect(child, File(destination, child.name))
+        }
     }
 
-    val plan = buildLinuxExportPlan(
-        repository = repository,
-        workspaceId = workspaceId,
-        selected = selected,
-        targetRoot = targetRoot,
-    )
-    onProgress(0, plan.files.size, null)
+    selected.forEach { entry ->
+        collect(entry, uniqueTarget(targetRoot, entry.name))
+    }
 
     var copied = 0
-    var failed = plan.failed
-    plan.files.forEachIndexed { index, item ->
+    files.forEachIndexed { index, item ->
         currentCoroutineContext().ensureActive()
-        var created: File? = null
-        try {
-            val destination = uniqueLinuxExportFile(item.destination)
-            created = destination
-            destination.parentFile?.mkdirs()
-            destination.outputStream().use { output ->
+        runCatching {
+            item.destination.parentFile?.mkdirs()
+            item.destination.outputStream().use { output ->
                 repository.exportFile(
                     id = workspaceId,
                     area = WorkspaceStorageArea.FILES,
@@ -670,126 +556,21 @@ private suspend fun copySelectionToPublicFolder(
                 )
             }
             copied++
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Exception) {
+        }.onFailure {
             failed++
-            runCatching { created?.delete() }
+            runCatching { item.destination.delete() }
         }
-        onProgress(index + 1, plan.files.size, item.sourcePath)
+        onProgress(index + 1, files.size, item.sourcePath)
     }
-
-    return LinuxExportResult(
-        copied = copied,
-        failed = failed,
-        targetPath = targetRoot.absolutePath,
-    )
+    copied to failed
 }
 
-private suspend fun buildLinuxExportPlan(
-    repository: WorkspaceRepository,
-    workspaceId: String,
-    selected: List<WorkspaceFileEntry>,
-    targetRoot: File,
-): LinuxExportPlan {
-    val files = mutableListOf<LinuxExportFile>()
-    var failed = 0
-    val selectedDirectories = selected
-        .filter { it.isDirectory && !it.isSymbolicLink }
-        .map { it.path }
-        .toSet()
-    val roots = selected.filter { entry ->
-        !entry.isSymbolicLink &&
-            selectedDirectories.none { directory ->
-                entry.path != directory && entry.path.startsWith("$directory/")
-            }
-    }
-    val pendingDirectories = ArrayDeque<Pair<String, File>>()
-
-    roots.forEach { entry ->
-        when {
-            entry.isDirectory -> {
-                val destination = ensureLinuxExportDirectory(File(targetRoot, entry.name))
-                if (destination == null) {
-                    failed++
-                } else {
-                    pendingDirectories.addLast(entry.path to destination)
-                }
-            }
-
-            !entry.isSymbolicLink -> {
-                files += LinuxExportFile(
-                    sourcePath = entry.path,
-                    destination = File(targetRoot, entry.name),
-                )
-            }
-        }
-    }
-
-    while (pendingDirectories.isNotEmpty()) {
-        currentCoroutineContext().ensureActive()
-        val (sourceDirectory, destinationDirectory) = pendingDirectories.removeFirst()
-        val children = try {
-            repository.listFiles(
-                id = workspaceId,
-                area = WorkspaceStorageArea.FILES,
-                path = sourceDirectory,
-            )
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Exception) {
-            failed++
-            continue
-        }
-        children.forEach { child ->
-            if (child.isSymbolicLink) return@forEach
-            when {
-                child.isDirectory -> {
-                    val destination = ensureLinuxExportDirectory(
-                        File(destinationDirectory, child.name),
-                    )
-                    if (destination == null) {
-                        failed++
-                    } else {
-                        pendingDirectories.addLast(child.path to destination)
-                    }
-                }
-
-                !child.isSymbolicLink -> {
-                    files += LinuxExportFile(
-                        sourcePath = child.path,
-                        destination = File(destinationDirectory, child.name),
-                    )
-                }
-            }
-        }
-    }
-
-    return LinuxExportPlan(files = files, failed = failed)
-}
-
-private fun ensureLinuxExportDirectory(directory: File): File? {
-    if (directory.isDirectory && !directory.isSymbolicLink()) return directory
-    if (!directory.exists() && !directory.isSymbolicLink()) {
-        return if (directory.mkdirs() || directory.isDirectory) directory else null
-    }
-    val alternative = uniqueLinuxExportFile(directory)
-    return if (alternative.mkdirs() || alternative.isDirectory) alternative else null
-}
-
-private fun uniqueLinuxExportFile(file: File): File {
-    if (!file.exists() && !file.isSymbolicLink()) return file
-    val name = file.name
-    val dot = name.lastIndexOf('.').takeIf { it > 0 } ?: -1
-    val stem = if (dot > 0) name.substring(0, dot) else name
-    val extension = if (dot > 0) name.substring(dot) else ""
+private fun uniqueTarget(root: File, name: String): File {
+    var candidate = File(root, name)
     var index = 1
-    while (true) {
-        val candidate = File(file.parentFile, "$stem ($index)$extension")
-        if (!candidate.exists() && !candidate.isSymbolicLink()) return candidate
+    while (candidate.exists()) {
+        candidate = File(root, "$name ($index)")
         index++
     }
+    return candidate
 }
-
-private fun File.isSymbolicLink(): Boolean =
-    runCatching { Files.isSymbolicLink(toPath()) }.getOrDefault(false)

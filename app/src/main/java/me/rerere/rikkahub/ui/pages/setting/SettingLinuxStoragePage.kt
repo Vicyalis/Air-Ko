@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.provider.OpenableColumns
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,8 +28,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -41,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,6 +54,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.util.Locale
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ChevronDown
 import me.rerere.hugeicons.stroke.ChevronUp
@@ -60,6 +67,7 @@ import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.FileExport
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.FolderAdd
+import me.rerere.hugeicons.stroke.Link01
 import me.rerere.hugeicons.stroke.Upload01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
@@ -70,23 +78,20 @@ import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
-import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.ui.toast.ToastType
 import me.rerere.workspace.WorkspaceFileEntry
+import me.rerere.workspace.WorkspaceSharedDirMode
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
-import java.util.Locale
 
 /**
- * 存储管理（数据设置）——直接管理内置 Linux 使用的那个文件夹。
+ * 存储管理（数据设置）——管理内置 Linux 的 `/workspace` 文件区。
  *
- * 该文件夹在 Linux 里就是 `/workspace`（rootfs 挂载点），AI 的文件工具与终端共用它；
- * 这里上传的文件会立刻出现在 Linux 里，不需要再经过聊天附件。
- *
- * 多个工作区时可以在页内切换；聊天附件的清理入口保留在页面顶部的卡片里。
+ * 文件区可以指向 Android 真实目录（绑定挂载 / 符号链接），也可以继续使用 App 私有目录。
+ * 页面只保留：选目录、选连接方式、选择文件导出、打开完整工作区、聊天附件清理。
  */
 @Composable
 fun SettingLinuxStoragePage() {
@@ -151,6 +156,7 @@ private fun WorkspaceFilesContent(
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
+    val scope = rememberCoroutineScope()
     val vm: WorkspaceDetailVM = koinViewModel(
         key = workspace.id,
         parameters = { parametersOf(workspace.id) },
@@ -160,10 +166,14 @@ private fun WorkspaceFilesContent(
     var deleteTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
     var showNewFolderDialog by remember { mutableStateOf(false) }
     var showWorkspaceMenu by remember { mutableStateOf(false) }
+    var showSharedDirDialog by remember { mutableStateOf(false) }
+    var showModeDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
-    var showExportFolderDialog by remember { mutableStateOf(false) }
-    var pendingExportAfterPermission by remember { mutableStateOf(false) }
-    var exportFolder by remember { mutableStateOf(context.readLinuxExportFolder()) }
+    var pendingExport by remember { mutableStateOf<List<WorkspaceFileEntry>?>(null) }
+    var exporting by remember { mutableStateOf(false) }
+    var exportDone by remember { mutableStateOf(0) }
+    var exportTotal by remember { mutableStateOf(0) }
+    var exportName by remember { mutableStateOf<String?>(null) }
 
     val uploadLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
@@ -186,77 +196,115 @@ private fun WorkspaceFilesContent(
         }
     }
 
-    val allFilesAccessLauncher = rememberLauncherForActivityResult(
+    val exportTreeLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        val selection = pendingExport.also { pendingExport = null } ?: return@rememberLauncherForActivityResult
+        val targetPath = LinuxDirectoryPicker.treeUriToDirectory(context, uri)
+        if (targetPath == null) {
+            toaster.show(
+                message = context.getString(R.string.linux_storage_export_pick_invalid),
+                type = ToastType.Warning,
+            )
+            return@rememberLauncherForActivityResult
+        }
+        exporting = true
+        exportDone = 0
+        exportTotal = 0
+        exportName = null
+        scope.launch {
+            try {
+                val (copied, failed) = withContext(Dispatchers.IO) {
+                    exportWorkspaceSelection(
+                        repository = repository,
+                        workspaceId = workspace.id,
+                        selected = selection,
+                        targetRoot = java.io.File(targetPath),
+                        onProgress = { done, total, name ->
+                            withContext(Dispatchers.Main) {
+                                exportDone = done
+                                exportTotal = total
+                                exportName = name
+                            }
+                        },
+                    )
+                }
+                toaster.show(
+                    message = context.getString(
+                        if (failed > 0) R.string.linux_storage_export_done_with_failures
+                        else R.string.linux_storage_export_done,
+                        copied,
+                        targetPath,
+                        failed,
+                    ),
+                    type = if (failed > 0) ToastType.Warning else ToastType.Success,
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (failure: Throwable) {
+                toaster.show(
+                    message = context.getString(
+                        R.string.linux_storage_export_failed,
+                        failure.message ?: failure.javaClass.simpleName,
+                    ),
+                    type = ToastType.Error,
+                )
+            } finally {
+                exporting = false
+            }
+        }
+    }
+
+    val allFilesLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
-    ) { _ ->
+    ) {
         if (hasLinuxExportStorageAccess(context)) {
-            if (pendingExportAfterPermission) showExportDialog = true
+            exportTreeLauncher.launch(null)
         } else {
+            pendingExport = null
             toaster.show(
                 message = context.getString(R.string.linux_storage_export_permission_denied),
                 type = ToastType.Warning,
             )
         }
-        pendingExportAfterPermission = false
     }
 
     val legacyStoragePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            if (pendingExportAfterPermission) showExportDialog = true
+            exportTreeLauncher.launch(null)
         } else {
+            pendingExport = null
             toaster.show(
                 message = context.getString(R.string.linux_storage_export_permission_denied),
                 type = ToastType.Warning,
             )
         }
-        pendingExportAfterPermission = false
     }
 
-    fun requestExport() {
-        if (Environment.getExternalStorageState() != Environment.MEDIA_MOUNTED) {
-            toaster.show(
-                message = context.getString(R.string.linux_storage_export_storage_unavailable),
-                type = ToastType.Warning,
-            )
-            return
-        }
+    fun startExport(selection: List<WorkspaceFileEntry>) {
+        pendingExport = selection
         if (hasLinuxExportStorageAccess(context)) {
-            showExportDialog = true
+            exportTreeLauncher.launch(null)
             return
         }
-        pendingExportAfterPermission = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                Uri.parse("package:${context.packageName}"),
+            allFilesLauncher.launch(
+                Intent(
+                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:${context.packageName}"),
+                )
             )
-            val opened = runCatching { allFilesAccessLauncher.launch(intent) }.isSuccess
-            if (!opened) {
-                pendingExportAfterPermission = false
-                toaster.show(
-                    message = context.getString(R.string.linux_storage_export_permission_required),
-                    type = ToastType.Warning,
-                )
-            }
         } else {
-            val launched = runCatching {
-                legacyStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }.isSuccess
-            if (!launched) {
-                pendingExportAfterPermission = false
-                toaster.show(
-                    message = context.getString(R.string.linux_storage_export_permission_required),
-                    type = ToastType.Warning,
-                )
-            }
+            legacyStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
     }
 
     val containerColor = MaterialTheme.colorScheme.tertiaryContainer
     val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-    val exportTargetPath = remember(exportFolder) { linuxExportTargetPath(exportFolder) }
+    val sharedPath = workspace.sharedDirPath
+    val mode = WorkspaceSharedDirMode.fromWire(workspace.sharedDirMode)
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -270,13 +318,6 @@ private fun WorkspaceFilesContent(
     ) {
         item("hint") {
             CardGroup {
-                item(
-                    headlineContent = { Text(stringResource(R.string.linux_storage_page_folder_hint_title)) },
-                    supportingContent = { Text(stringResource(R.string.linux_storage_page_folder_hint)) },
-                    leadingContent = {
-                        CardGroupIcon(HugeIcons.Folder01, containerColor = containerColor, contentColor = contentColor)
-                    },
-                )
                 if (workspaces.size > 1) {
                     item(
                         onClick = { showWorkspaceMenu = true },
@@ -289,31 +330,64 @@ private fun WorkspaceFilesContent(
                     )
                 }
                 item(
-                    onClick = onOpenWorkspace,
-                    headlineContent = { Text(stringResource(R.string.linux_storage_page_open_workspace)) },
-                    supportingContent = { Text(stringResource(R.string.linux_storage_page_open_workspace_desc)) },
+                    onClick = { showSharedDirDialog = true },
+                    headlineContent = { Text(stringResource(R.string.linux_storage_shared_dir_title)) },
+                    supportingContent = {
+                        Text(
+                            text = sharedPath.ifBlank {
+                                stringResource(R.string.linux_storage_shared_dir_default)
+                            },
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
                     leadingContent = {
-                        CardGroupIcon(HugeIcons.File02, containerColor = containerColor, contentColor = contentColor)
+                        CardGroupIcon(HugeIcons.Folder01, containerColor = containerColor, contentColor = contentColor)
                     },
                 )
                 item(
-                    onClick = { requestExport() },
+                    onClick = {
+                        if (sharedPath.isBlank()) {
+                            toaster.show(
+                                context.getString(R.string.linux_storage_shared_dir_required),
+                                type = ToastType.Warning,
+                            )
+                        } else {
+                            showModeDialog = true
+                        }
+                    },
+                    headlineContent = { Text(stringResource(R.string.linux_storage_shared_mode_title)) },
+                    supportingContent = {
+                        Text(
+                            stringResource(
+                                if (mode == WorkspaceSharedDirMode.SYMLINK) {
+                                    R.string.linux_storage_shared_mode_symlink
+                                } else {
+                                    R.string.linux_storage_shared_mode_bind
+                                }
+                            )
+                        )
+                    },
+                    leadingContent = {
+                        CardGroupIcon(HugeIcons.Link01, containerColor = containerColor, contentColor = contentColor)
+                    },
+                )
+                item(
+                    onClick = { showExportDialog = true },
                     headlineContent = { Text(stringResource(R.string.linux_storage_export_entry_title)) },
                     supportingContent = {
-                        Text(stringResource(R.string.linux_storage_export_entry_desc, exportTargetPath))
+                        Text(stringResource(R.string.linux_storage_export_entry_desc))
                     },
                     leadingContent = {
                         CardGroupIcon(HugeIcons.FileExport, containerColor = containerColor, contentColor = contentColor)
                     },
                 )
                 item(
-                    onClick = { showExportFolderDialog = true },
-                    headlineContent = { Text(stringResource(R.string.linux_storage_export_folder_title)) },
-                    supportingContent = {
-                        Text(stringResource(R.string.linux_storage_export_folder_desc, exportFolder))
-                    },
+                    onClick = onOpenWorkspace,
+                    headlineContent = { Text(stringResource(R.string.linux_storage_page_open_workspace)) },
+                    supportingContent = { Text(stringResource(R.string.linux_storage_page_open_workspace_desc)) },
                     leadingContent = {
-                        CardGroupIcon(HugeIcons.Folder01, containerColor = containerColor, contentColor = contentColor)
+                        CardGroupIcon(HugeIcons.File02, containerColor = containerColor, contentColor = contentColor)
                     },
                 )
                 item(
@@ -480,18 +554,68 @@ private fun WorkspaceFilesContent(
         )
     }
 
-    if (showExportFolderDialog) {
-        LinuxStorageExportFolderDialog(
-            currentFolder = exportFolder,
-            onDismiss = { showExportFolderDialog = false },
-            onSave = { folder ->
-                context.writeStringPreference(LINUX_EXPORT_FOLDER_PREF_KEY, folder)
-                exportFolder = folder
-                showExportFolderDialog = false
-                toaster.show(
-                    message = context.getString(R.string.linux_storage_export_folder_saved, folder),
-                    type = ToastType.Success,
-                )
+    if (showSharedDirDialog) {
+        LinuxSharedDirectoryDialogs(
+            workspaceId = workspace.id,
+            repository = repository,
+            currentPath = sharedPath,
+            currentMode = mode.wire,
+            onDismiss = { showSharedDirDialog = false },
+            onSaved = { showSharedDirDialog = false },
+        )
+    }
+
+    if (showModeDialog) {
+        AlertDialog(
+            onDismissRequest = { showModeDialog = false },
+            title = { Text(stringResource(R.string.linux_storage_shared_mode_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    WorkspaceSharedDirMode.entries.forEach { option ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showModeDialog = false
+                                    scope.launch {
+                                        repository.updateSharedDir(workspace.id, sharedPath, option)
+                                            .onSuccess {
+                                                toaster.show(
+                                                    context.getString(R.string.linux_storage_shared_mode_saved),
+                                                    type = ToastType.Success,
+                                                )
+                                            }
+                                            .onFailure {
+                                                toaster.show(
+                                                    it.message ?: context.getString(R.string.linux_storage_shared_dir_failed),
+                                                    type = ToastType.Error,
+                                                )
+                                            }
+                                    }
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = option == mode, onClick = null)
+                            Text(
+                                text = stringResource(
+                                    if (option == WorkspaceSharedDirMode.SYMLINK) {
+                                        R.string.linux_storage_shared_mode_symlink
+                                    } else {
+                                        R.string.linux_storage_shared_mode_bind
+                                    }
+                                ),
+                                modifier = Modifier.padding(start = 8.dp),
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showModeDialog = false }) {
+                    Text(stringResource(R.string.linux_storage_page_cancel))
+                }
             },
         )
     }
@@ -500,8 +624,48 @@ private fun WorkspaceFilesContent(
         LinuxStorageExportDialog(
             workspaceId = workspace.id,
             repository = repository,
-            folder = exportFolder,
             onDismiss = { showExportDialog = false },
+            onExportSelected = { selection ->
+                showExportDialog = false
+                startExport(selection)
+            },
+        )
+    }
+
+    if (exporting) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.linux_storage_export_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = if (exportTotal > 0) {
+                            stringResource(R.string.linux_storage_export_progress, exportDone, exportTotal)
+                        } else {
+                            stringResource(R.string.linux_storage_export_preparing)
+                        }
+                    )
+                    if (exportTotal > 0) {
+                        LinearProgressIndicator(
+                            progress = { exportDone.toFloat() / exportTotal },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    exportName?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = null,
         )
     }
 }

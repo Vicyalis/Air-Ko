@@ -2,7 +2,7 @@
  * 设备控制·动作自检（对应 Reticle 的 acttest 自证流程：只动 Air-Ko 自己的自测靶窗口）。
  *
  * 工具 device_acttest 与设置页/onboarding 的「运行自检」按钮共用这一份实现：
- * 在自家小窗上跑一遍 tap／长按／输入／滑动／返回，然后读窗口自己的计数回执。
+ * 在自家小窗上跑一遍 tap／长按／输入／滑动，然后读窗口自己的计数回执；
  */
 package me.rerere.rikkahub.device
 
@@ -17,7 +17,6 @@ data class DeviceSelfTestResult(
     val tapCount: Int,
     val typed: String,
     val typedExpected: String,
-    val windowClosed: Boolean,
     val steps: List<String>,
     val message: String,
 )
@@ -47,7 +46,6 @@ internal suspend fun AccessibilityService.runActSelfTest(context: Context): Devi
             tapCount = 0,
             typed = "",
             typedExpected = DeviceSelfTestActivity.TYPED_EXPECTED,
-            windowClosed = false,
             steps = emptyList(),
             message = "the self-test window did not appear in time (the system may block " +
                 "background activity starts; keep Air-Ko in the foreground and try again)",
@@ -75,25 +73,15 @@ internal suspend fun AccessibilityService.runActSelfTest(context: Context): Devi
         )
         steps += "swipe=${okText(swipeOk)}"
         delay(250L)
-        val backOk = deviceGlobalKey(DeviceGlobalKey.Back)
-        steps += "back=${okText(backOk)}"
-        delay(700L)
-        // 万一输入法弹出来，第一次返回可能只收起了键盘；补一次返回，确保靶窗口真的关掉
-        if (!DeviceSelfTestActivity.finished) {
-            deviceGlobalKey(DeviceGlobalKey.Back)
-            delay(500L)
-        }
 
         val taps = DeviceSelfTestActivity.tapCount
         val typed = DeviceSelfTestActivity.typed
-        val closed = DeviceSelfTestActivity.finished
-        val allOk = tapOk && pressOk && typeOutcome.ok && swipeOk && backOk &&
-            taps >= 1 && typed == DeviceSelfTestActivity.TYPED_EXPECTED && closed
+        val allOk = tapOk && pressOk && typeOutcome.ok && swipeOk &&
+            taps >= 1 && typed == DeviceSelfTestActivity.TYPED_EXPECTED
         if (!allOk) {
-            // 只看到「tap=ok」却失败时，多半是坐标没打中或窗口没收掉，把计数一并列出来
+            // 只看到「tap=ok」却失败时，多半是坐标没打中，把计数一并列出来
             steps += "taps=$taps"
             steps += "typed=\"${typed.take(24)}\""
-            steps += "window_closed=$closed"
         }
         DeviceSelfTestResult(
             ok = allOk,
@@ -101,18 +89,17 @@ internal suspend fun AccessibilityService.runActSelfTest(context: Context): Devi
             tapCount = taps,
             typed = typed,
             typedExpected = DeviceSelfTestActivity.TYPED_EXPECTED,
-            windowClosed = closed,
             steps = steps.toList(),
             message = if (allOk) {
-                "device control verified end to end (tap, long-press, input, swipe, back)"
+                "device control verified end to end (tap, long-press, input, swipe)"
             } else {
-                "self-test finished with mismatches; check steps/tap_count/typed/window_closed"
+                "self-test finished with mismatches; check steps/tap_count/typed"
             },
         )
     } finally {
-        if (!DeviceSelfTestActivity.finished) {
-            runCatching { deviceGlobalKey(DeviceGlobalKey.Back) }
-        }
+        // 不再用无障碍「返回」关窗：那一步在部分机型会把 Air-Ko 一起退掉。
+        // 由测试靶自己 finish，只关闭自测窗口。
+        DeviceSelfTestActivity.close()
     }
 }
 

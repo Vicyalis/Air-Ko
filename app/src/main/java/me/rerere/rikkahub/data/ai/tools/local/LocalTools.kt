@@ -4,6 +4,7 @@ import android.content.Context
 import me.rerere.ai.core.Tool
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.event.AppEventBus
+import me.rerere.rikkahub.device.DeviceControlSessionGuard
 import me.rerere.tts.provider.TTSManager
 
 /**
@@ -62,6 +63,8 @@ class LocalTools(
     fun getTools(
         options: List<LocalToolOption>,
         autoApprove: Boolean = false,
+        deviceAutoApprove: Boolean = false,
+        conversationId: String? = null,
     ): List<Tool> {
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) {
@@ -90,7 +93,20 @@ class LocalTools(
             tools.add(chartDisplayTool)
         }
         if (options.contains(LocalToolOption.DeviceControl)) {
-            tools.addAll(deviceControlTools.getTools())
+            tools.addAll(
+                deviceControlTools.getTools().map { tool ->
+                    val guarded = tool.copy(
+                        execute = { args ->
+                            DeviceControlSessionGuard.ensureAllowed(
+                                context,
+                                conversationId ?: "unknown",
+                            )
+                            tool.execute(args)
+                        }
+                    )
+                    if (deviceAutoApprove) guarded.copy(needsApproval = { false }) else guarded
+                }
+            )
         }
         return tools.map { it.applyLocalToolApproval(autoApprove) }
     }

@@ -6,7 +6,7 @@
  * 自证动作通路真的可用（工具 device_acttest 会来跑一遍），而不是拿用户的应用试错。
  * 自带自证：点击计数、输入框内容、窗口是否已关（静态字段，工具侧读取）。
  *
- * 只由 device_acttest 打开（界面上没有入口）；小窗（系统对话框主题），用完按返回自己关掉。
+ * 只由 device_acttest 打开（界面上没有入口）；用完由测试代码内部 finish，不再发送系统返回键。
  */
 package me.rerere.rikkahub.device
 
@@ -15,6 +15,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.TypedValue
@@ -72,6 +74,9 @@ class DeviceSelfTestActivity : Activity() {
         var typed = ""
             private set
 
+        @Volatile
+        private var instance: DeviceSelfTestActivity? = null
+
         /** 由 device_acttest 调用（后台起 Activity 可能被系统拦 → 调用方查 ready）。 */
         fun open(context: Context) {
             runCatching {
@@ -86,10 +91,19 @@ class DeviceSelfTestActivity : Activity() {
                 )
             }
         }
+
+        /** 只关闭自测靶窗口，不发送系统返回键，避免把 Air-Ko 一起退出。 */
+        fun close() {
+            val activity = instance ?: return
+            Handler(Looper.getMainLooper()).post {
+                runCatching { activity.finish() }
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        instance = this
         runCatching { requestWindowFeature(Window.FEATURE_NO_TITLE) }
         // 别把输入法弹出来：键盘会顶起窗口让坐标失效，还会吃掉第一次返回键
         runCatching {
@@ -156,6 +170,7 @@ class DeviceSelfTestActivity : Activity() {
     override fun onDestroy() {
         finished = true
         ready = false
+        if (instance === this) instance = null
         super.onDestroy()
     }
 }

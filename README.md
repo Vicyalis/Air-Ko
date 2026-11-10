@@ -24,7 +24,7 @@ Android 上的 LLM 聊天客户端，基于 [RikkaHub](https://github.com/rikkah
 
 ### 模型与工具
 
-- 多服务商：OpenAI 兼容（Chat Completions / Responses）、Anthropic、Google，支持自定义 Base URL、Header、代理与多 Key 轮换。
+- 多服务商：OpenAI 兼容（Chat Completions / Responses）、Anthropic、Google，支持自定义 Base URL、Header、代理与多 Key 轮换；内置 OpenCode Go 订阅预设（`https://opencode.ai/zen/go/v1`）。
 - MCP：SSE / Streamable HTTP 传输、OAuth 授权、工具审批与调用。
 - 联网搜索：19 家服务商，可自建 SearXNG 或接入自定义 JS 引擎。
 
@@ -33,11 +33,11 @@ Android 上的 LLM 聊天客户端，基于 [RikkaHub](https://github.com/rikkah
 - proot 沙箱 Linux，多发行版（Alpine / Ubuntu / Debian / Arch / Fedora / NixOS），内置终端、文件管理与包管理器。
 - **桌面方案**：GNOME、niri、KDE Plasma、Cinnamon、Hyprland，以及 noVNC、code-server、JupyterLab。
 - 桌面**默认全屏**、**点击即开**；可设置启动时直接进入桌面 / 终端，并选择具体工作区。
-- 工作区文件可**导出到 Android 公共目录**（默认 `/sdcard/Air-Ko!`，目录名与位置可修改）。
+- 工作区文件区可指向 Android 真实目录（绑定挂载或符号链接）；支持选择文件/文件夹导出到任意本地目录。
 
 ### 手机与语音
 
-- 设备控制：无障碍 + Shizuku，默认逐次审批；支持「允许所有权限」与操作审计。
+- 设备控制：无障碍 + Shizuku，支持逐项审批、工作区「允许全部命令」、通知栏显示控制状态并可强制暂停本次对话。
 - 语音：5 家 ASR、12 家 TTS，支持语音模式与自动朗读。
 
 ### 统计与数据

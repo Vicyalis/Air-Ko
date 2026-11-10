@@ -105,9 +105,9 @@ fun WorkspaceDesktopPage(id: String, conversationId: String = "") {
     var fullscreen by remember(id) {
         mutableStateOf(settings.displaySetting.desktopFullscreenByDefault)
     }
-    // 桌面上的下拉悬浮聊天（类似 PC QQ）：默认 Pin 住，取消后点桌面即收起
+    // 桌面上的下拉悬浮聊天（类似 PC QQ）：默认不 Pin，点桌面即收起
     var chatPanelVisible by remember(id) { mutableStateOf(false) }
-    var chatPinned by remember(id) { mutableStateOf(true) }
+    var chatPinned by remember(id) { mutableStateOf(false) }
 
     // 全屏时返回键先退出全屏, 而不是直接离开页面
     BackHandler(enabled = fullscreen) { fullscreen = false }

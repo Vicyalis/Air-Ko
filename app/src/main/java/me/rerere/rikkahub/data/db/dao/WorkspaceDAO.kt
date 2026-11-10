@@ -28,6 +28,15 @@ interface WorkspaceDAO {
     suspend fun setShellCompatibilityMode(id: String, enabled: Boolean, updatedAt: Long): Int
 
     @Query(
+        "UPDATE workspaces SET shared_dir_path = :path, shared_dir_mode = :mode, " +
+            "updated_at = :updatedAt WHERE id = :id"
+    )
+    suspend fun setSharedDir(id: String, path: String, mode: String, updatedAt: Long): Int
+
+    @Query("UPDATE workspaces SET allow_all_tools = :allow, updated_at = :updatedAt WHERE id = :id")
+    suspend fun setAllowAllTools(id: String, allow: Boolean, updatedAt: Long): Int
+
+    @Query(
         "UPDATE workspaces SET desktop = :desktop, desktop_custom_command = :customCommand, " +
             "desktop_custom_port = :customPort, updated_at = :updatedAt WHERE id = :id"
     )

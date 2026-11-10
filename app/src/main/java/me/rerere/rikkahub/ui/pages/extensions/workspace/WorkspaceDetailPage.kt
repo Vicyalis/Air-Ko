@@ -262,6 +262,7 @@ fun WorkspaceDetailPage(id: String) {
                         installProgress = installProgress,
                         onInstallRootfs = { showInstallDialog = true },
                         onToolApprovalChange = vm::setToolApproval,
+                        onAllowAllToolsChange = vm::setAllowAllTools,
                         onShellCompatibilityModeChange = vm::setShellCompatibilityMode,
                         onDesktopChange = vm::updateDesktop,
                     )
@@ -421,6 +422,7 @@ private fun WorkspaceBasicPage(
     installProgress: RootfsInstallProgress?,
     onInstallRootfs: () -> Unit,
     onToolApprovalChange: (String, Boolean) -> Unit,
+    onAllowAllToolsChange: (Boolean) -> Unit,
     onShellCompatibilityModeChange: (Boolean) -> Unit,
     onDesktopChange: (WorkspaceDesktop, String, Int) -> Unit,
 ) {
@@ -505,6 +507,7 @@ private fun WorkspaceBasicPage(
             WorkspaceToolApprovalCard(
                 workspace = workspace,
                 onToolApprovalChange = onToolApprovalChange,
+                onAllowAllToolsChange = onAllowAllToolsChange,
             )
         }
     }
@@ -537,9 +540,11 @@ private fun ShellStatusBadge(status: String?) {
 private fun WorkspaceToolApprovalCard(
     workspace: WorkspaceEntity?,
     onToolApprovalChange: (String, Boolean) -> Unit,
+    onAllowAllToolsChange: (Boolean) -> Unit,
 ) {
     val overrides = workspace?.toolApprovalOverrides().orEmpty()
     val tools = workspaceToolApprovalItems()
+    val allowAll = workspace?.allowAllTools == true
 
     CardGroup(
         title = {
@@ -553,11 +558,21 @@ private fun WorkspaceToolApprovalCard(
             }
         },
     ) {
+        switchItem(
+            checked = allowAll,
+            onCheckedChange = onAllowAllToolsChange,
+            enabled = workspace != null,
+            supportingContent = {
+                Text(stringResource(R.string.workspace_detail_allow_all_desc))
+            },
+            leadingContent = { CardGroupIcon(HugeIcons.Tick01) },
+            headlineContent = { Text(stringResource(R.string.workspace_detail_allow_all)) },
+        )
         tools.forEach { (toolName, label, icon) ->
             switchItem(
-                checked = resolveWorkspaceToolApproval(toolName, overrides),
-                onCheckedChange = { onToolApprovalChange(toolName, it) },
-                enabled = workspace != null,
+                checked = !resolveWorkspaceToolApproval(toolName, overrides, allowAll = allowAll),
+                onCheckedChange = { allowed -> onToolApprovalChange(toolName, !allowed) },
+                enabled = workspace != null && !allowAll,
                 supportingContent = {
                     Text(
                         text = toolName,

@@ -360,7 +360,7 @@ class WorkspaceTerminalSessionManager internal constructor(
         select: Boolean = true,
     ): TerminalSession? = withContext(Dispatchers.Main.immediate) {
         val initialState = currentState(root)
-        if (initialState.isCreating || (onlyIfEmpty && initialState.tabs.isNotEmpty())) {
+        if (initialState.isCreating || (onlyIfEmpty && initialState.tabs.any { !it.isAi && !it.finished })) {
             return@withContext null
         }
         updateState(root) { it.copy(isCreating = true) }

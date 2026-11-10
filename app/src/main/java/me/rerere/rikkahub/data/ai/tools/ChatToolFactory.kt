@@ -40,22 +40,31 @@ class ChatToolFactory(
         assistant: Assistant,
         model: Model,
         workspaceCwd: String? = null,
+        conversationId: String? = null,
     ): List<Tool> = buildList {
+        val workspace = assistant.workspaceId?.toString()?.let { workspaceRepository.getById(it) }
         if (assistant.enableMemory) {
             addAll(buildMemoryTools(memoryRepository, assistant.memoryId))
         }
         if (shouldUseExternalWebSearch(assistant, model)) {
             addAll(createSearchTools(settings))
         }
-        addAll(localTools.getTools(assistant.localTools, assistant.localToolsAutoApprove))
+        addAll(
+            localTools.getTools(
+                options = assistant.localTools,
+                autoApprove = assistant.localToolsAutoApprove,
+                deviceAutoApprove = workspace?.allowAllTools == true,
+                conversationId = conversationId,
+            )
+        )
         if (assistant.enableRecentChatsReference) {
             addAll(createConversationTools(conversationRepository, assistant.id))
         }
         addAll(
             createWorkspaceToolsIfReady(
-                assistant.workspaceId?.toString(),
-                workspaceCwd,
-                assistant.localToolsAutoApprove,
+                workspace = workspace,
+                cwd = workspaceCwd,
+                autoApprove = assistant.localToolsAutoApprove,
             )
         )
         if (assistant.enabledSkills.isNotEmpty()) {
@@ -89,19 +98,24 @@ class ChatToolFactory(
     }
 
     private suspend fun createWorkspaceToolsIfReady(
-        workspaceId: String?,
+        workspace: me.rerere.rikkahub.data.db.entity.WorkspaceEntity?,
         cwd: String?,
         autoApprove: Boolean,
     ): List<Tool> {
-        if (workspaceId.isNullOrBlank()) return emptyList()
-        val workspace = workspaceRepository.getById(workspaceId) ?: return emptyList()
+        if (workspace == null) return emptyList()
         if (workspace.shellStatus != WorkspaceShellStatus.READY.name) {
             Log.d(
                 TAG,
-                "createWorkspaceToolsIfReady: skip workspace tools, workspace=$workspaceId, status=${workspace.shellStatus}"
+                "createWorkspaceToolsIfReady: skip workspace tools, workspace=${workspace.id}, status=${workspace.shellStatus}"
             )
             return emptyList()
         }
-        return createWorkspaceTools(workspaceId, workspaceRepository, cwd, autoApprove)
+        return createWorkspaceTools(
+            workspaceId = workspace.id,
+            workspaceRepository = workspaceRepository,
+            cwd = cwd,
+            autoApprove = autoApprove,
+            allowAll = workspace.allowAllTools,
+        )
     }
 }

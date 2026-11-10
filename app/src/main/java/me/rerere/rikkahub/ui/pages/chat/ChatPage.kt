@@ -146,8 +146,8 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, te
         windowAdaptiveInfo.width > windowAdaptiveInfo.height && windowAdaptiveInfo.width >= 1100.dp
 
     // 大屏默认展开侧栏，窄屏默认收起；同时修掉切回窄屏时抽屉残留
-    LaunchedEffect(isBigScreen) {
-        drawerOpen = isBigScreen
+    LaunchedEffect(isBigScreen, setting.displaySetting.drawerOpenByDefault) {
+        drawerOpen = isBigScreen && setting.displaySetting.drawerOpenByDefault
     }
 
     val startVoiceMode = rememberVoiceModeStarter(vm, setting)
@@ -529,7 +529,7 @@ private fun ChatPageContent(
 }
 
 @Composable
-private fun ChatFilesPickerSheet(
+internal fun ChatFilesPickerSheet(
     inputState: ChatInputState,
     setting: Settings,
     conversation: Conversation,
@@ -537,7 +537,7 @@ private fun ChatFilesPickerSheet(
     chatModel: Model?,
     vm: ChatVM,
     attachmentPickerActions: ChatAttachmentPickerActions,
-    onStartVoiceMode: () -> Unit,
+    onStartVoiceMode: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
@@ -588,7 +588,7 @@ private fun ChatFilesPickerSheet(
                     dismissAll()
                     focusManager.clearFocus(force = true)
                     keyboardController?.hide()
-                    onStartVoiceMode()
+                    onStartVoiceMode?.invoke()
                 }
             } else null,
         )
