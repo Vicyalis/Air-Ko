@@ -311,6 +311,9 @@ sealed class TTSProviderSetting {
                 MiMo::class,
                 ElevenLabs::class,
                 Volcengine::class,
+                // Step 的 provider、设置页与目录表都已接好，之前漏在 Types 里，
+                // 导致设置页新建 TTS 时根本选不到它（TTSProviderSettingStepTest 抓到）
+                Step::class,
             )
         }
     }
