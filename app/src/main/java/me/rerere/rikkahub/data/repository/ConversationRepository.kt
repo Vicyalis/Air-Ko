@@ -395,7 +395,10 @@ class ConversationRepository(
     }
 
     fun conversationToConversationEntity(conversation: Conversation): ConversationEntity {
-        require(conversation.messageNodes.none { it.messages.any { message -> message.hasBase64Part() } })
+        // 只校验最后一条：历史消息在它自己的保存轮次里已经校验过。
+        // 原来每次保存都全量扫描所有消息的所有 part（500 条会话 = 每轮 3~4 次全扫），
+        // 而 base64 只可能出现在刚生成/刚追加的那条消息上。
+        require(conversation.messageNodes.lastOrNull()?.messages?.none { it.hasBase64Part() } ?: true)
         return ConversationEntity(
             id = conversation.id.toString(),
             title = conversation.title,
@@ -569,7 +572,7 @@ class ConversationRepository(
     private suspend fun syncMessageNodes(conversation: Conversation) {
         val conversationId = conversation.id.toString()
         val previous = synchronized(savedNodeMessages) { savedNodeMessages[conversationId] }.orEmpty()
-        val existing = messageNodeDAO.getNodesOfConversation(conversationId).associateBy { it.id }
+        val existing = messageNodeDAO.getNodeMetaOfConversation(conversationId).associateBy { it.id }
 
         val current = LinkedHashMap<String, List<UIMessage>>(conversation.messageNodes.size)
         val changed = ArrayList<MessageNodeEntity>(2)

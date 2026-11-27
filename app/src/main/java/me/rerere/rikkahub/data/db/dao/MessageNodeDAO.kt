@@ -19,6 +19,16 @@ interface MessageNodeDAO {
     @Query("SELECT * FROM message_node WHERE conversation_id = :conversationId ORDER BY node_index ASC")
     suspend fun getNodesOfConversation(conversationId: String): List<MessageNodeEntity>
 
+    /**
+     * 只取节点元数据（不含 messages JSON）。
+     * 增量保存时只需要知道「有哪些 id、顺序/选中项有没有变」，没必要把整份消息 JSON 读出来。
+     */
+    @Query(
+        "SELECT id, conversation_id AS conversationId, node_index AS nodeIndex, select_index AS selectIndex " +
+            "FROM message_node WHERE conversation_id = :conversationId"
+    )
+    suspend fun getNodeMetaOfConversation(conversationId: String): List<MessageNodeMeta>
+
     @Query(
         "SELECT * FROM message_node WHERE conversation_id = :conversationId " +
             "ORDER BY node_index ASC LIMIT :limit OFFSET :offset"
@@ -57,6 +67,13 @@ interface MessageNodeDAO {
     @RawQuery
     suspend fun getModelTokenStatsRaw(query: SupportSQLiteQuery): List<ModelTokenStats>
 }
+
+data class MessageNodeMeta(
+    val id: String,
+    val conversationId: String,
+    val nodeIndex: Int,
+    val selectIndex: Int,
+)
 
 data class MessageTokenStats(
     val totalMessages: Int = 0,
