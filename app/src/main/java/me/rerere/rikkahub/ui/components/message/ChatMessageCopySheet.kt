@@ -9,9 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -21,6 +20,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -41,10 +41,28 @@ import me.rerere.rikkahub.utils.copyMessageToClipboard
 fun ChatMessageCopySheet(
     message: UIMessage,
     onDismissRequest: () -> Unit,
-    /** 选中/查看全文的同时可直接把这段内容作为引用带回输入框 */
-    onQuote: (() -> Unit)? = null,
+    /** 把「选中的文字」作为引用带回输入框；没有选区时引用整条消息 */
+    onQuote: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    val fullText = remember(message) {
+        message.parts
+            .filterIsInstance<UIMessagePart.Text>()
+            .filter { it.text.isNotBlank() }
+            .joinToString("\n\n") { it.text }
+    }
+    // 只读 TextField：相比 SelectionContainer，它能拿到真实的选区范围，
+    // 这是「选中一段内容并追问」的前提。
+    val textState = remember(message) { TextFieldState(fullText) }
+    val quoteSelection = {
+        val selection = textState.selection
+        val selected = if (!selection.collapsed) {
+            textState.text.subSequence(selection.min, selection.max).toString()
+        } else {
+            fullText
+        }
+        onQuote?.invoke(selected)
+    }
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
@@ -80,7 +98,7 @@ fun ChatMessageCopySheet(
                     if (onQuote != null) {
                         TextButton(
                             onClick = {
-                                onQuote()
+                                quoteSelection()
                                 onDismissRequest()
                             }
                         ) {
@@ -131,21 +149,16 @@ fun ChatMessageCopySheet(
                     )
                 }
             } else {
-                SelectionContainer {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        textParts.fastForEach { textPart ->
-                            Text(
-                                text = textPart.text,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                    }
-                }
+                BasicTextField(
+                    state = textState,
+                    readOnly = true,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                )
             }
         }
     }

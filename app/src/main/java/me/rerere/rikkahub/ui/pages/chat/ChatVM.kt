@@ -81,12 +81,18 @@ class ChatVM(
      * 后续如果要做带 messageId 的结构化引用，再在此基础上扩展。
      */
     fun quoteMessage(message: UIMessage) {
-        val text = message.parts
-            .filterIsInstance<UIMessagePart.Text>()
-            .joinToString("\n\n") { it.text }
-            .trim()
-        if (text.isBlank()) return
-        val quoted = text.lineSequence()
+        quoteText(
+            message.parts
+                .filterIsInstance<UIMessagePart.Text>()
+                .joinToString("\n\n") { it.text }
+        )
+    }
+
+    /** 把一段任意文本（例如"选择并复制"面板里的选区）作为引用填入输入框。 */
+    fun quoteText(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) return
+        val quoted = trimmed.lineSequence()
             .filter { it.isNotBlank() }
             .take(QUOTE_MAX_LINES)
             .joinToString("\n") { "> ${it.trimEnd()}" }

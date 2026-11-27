@@ -105,7 +105,7 @@ fun ChatMessage(
     onEdit: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
-    onQuote: ((UIMessage) -> Unit)? = null,
+    onQuoteText: ((String) -> Unit)? = null,
     onUpdate: (MessageNode) -> Unit,
     isFavorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
@@ -236,7 +236,15 @@ fun ChatMessage(
             onSelectAndCopy = {
                 showSelectCopySheet = true
             },
-            onQuote = onQuote?.let { quote -> { quote(message) } },
+            onQuote = onQuoteText?.let { quote ->
+                {
+                    quote(
+                        message.parts
+                            .filterIsInstance<UIMessagePart.Text>()
+                            .joinToString("\n\n") { it.text }
+                    )
+                }
+            },
             isFavorite = isFavorite,
             onToggleFavorite = onToggleFavorite,
             onWebViewPreview = {
@@ -266,7 +274,7 @@ fun ChatMessage(
             onDismissRequest = {
                 showSelectCopySheet = false
             },
-            onQuote = onQuote?.let { quote -> { quote(message) } },
+            onQuote = onQuoteText,
         )
     }
 }

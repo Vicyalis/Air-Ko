@@ -454,8 +454,8 @@ private fun ChatPageContent(
                     inputState.editingMessage = it.id
                     inputState.setContents(it.parts)
                 },
-                onQuoteMessage = {
-                    vm.quoteMessage(it)
+                onQuoteText = {
+                    vm.quoteText(it)
                 },
                 onForkMessage = {
                     scope.launch {

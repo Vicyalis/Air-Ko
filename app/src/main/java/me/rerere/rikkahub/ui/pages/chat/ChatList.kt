@@ -132,7 +132,7 @@ fun ChatList(
     onClearAllErrors: () -> Unit = {},
     onRegenerate: (UIMessage) -> Unit = {},
     onEdit: (UIMessage) -> Unit = {},
-    onQuoteMessage: ((UIMessage) -> Unit)? = null,
+    onQuoteText: ((String) -> Unit)? = null,
     onForkMessage: (UIMessage) -> Unit = {},
     onDelete: (UIMessage) -> Unit = {},
     onUpdateMessage: (MessageNode) -> Unit = {},
@@ -175,7 +175,7 @@ fun ChatList(
                 onClearAllErrors = onClearAllErrors,
                 onRegenerate = onRegenerate,
                 onEdit = onEdit,
-                onQuoteMessage = onQuoteMessage,
+                onQuoteText = onQuoteText,
                 onForkMessage = onForkMessage,
                 onDelete = onDelete,
                 onUpdateMessage = onUpdateMessage,
@@ -225,7 +225,7 @@ private fun ChatListNormal(
     onClearAllErrors: () -> Unit,
     onRegenerate: (UIMessage) -> Unit,
     onEdit: (UIMessage) -> Unit,
-    onQuoteMessage: ((UIMessage) -> Unit)? = null,
+    onQuoteText: ((String) -> Unit)? = null,
     onForkMessage: (UIMessage) -> Unit,
     onDelete: (UIMessage) -> Unit,
     onUpdateMessage: (MessageNode) -> Unit,
@@ -383,7 +383,7 @@ private fun ChatListNormal(
                             onEdit = {
                                 onEdit(node.currentMessage)
                             },
-                            onQuote = onQuoteMessage,
+                            onQuoteText = onQuoteText,
                             onFork = {
                                 onForkMessage(node.currentMessage)
                             },
