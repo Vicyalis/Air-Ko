@@ -348,6 +348,7 @@ class RootfsInstaller(
         // 根目录只规范化一次: 逐条目 realpath 会在上万条目时明显拖慢解压
         val root = targetDir.canonicalFile
         var cachedParent: String? = null
+        val validatedParents = HashSet<String>()
         var entries = 0
         var reportedEntries = 0
         var reportedAt = System.nanoTime()
@@ -385,7 +386,7 @@ class RootfsInstaller(
                     input.skipFully(header.size.paddingSize())
                     continue
                 }
-                val target = safeResolve(root, header.name)
+                val target = safeResolve(root, header.name, validatedParents)
                 // 相邻条目通常同目录, 缓存上一个父目录可以省掉大量重复的 mkdirs 系统调用
                 val parent = target.parentFile
                 if (parent != null && parent.path != cachedParent) {
@@ -394,7 +395,10 @@ class RootfsInstaller(
                 }
                 when (header.type) {
                     TarEntryType.DIRECTORY -> target.mkdirs()
-                    TarEntryType.SYMLINK -> createSymlink(root, target, header.linkName)
+                    TarEntryType.SYMLINK -> {
+                        createSymlink(root, target, header.linkName)
+                        invalidateValidatedParents(validatedParents, target.absolutePath)
+                    }
                     TarEntryType.HARDLINK -> createHardLink(root, target, header.linkName)
                     TarEntryType.FILE -> {
                         target.outputStream().use { output ->
@@ -583,14 +587,40 @@ class RootfsInstaller(
         return offset
     }
 
-    // root 必须是 canonicalFile, 调用方已规范化
-    private fun safeResolve(root: File, path: String): File {
+    /**
+     * 把归档内路径解析成 rootfs 内的目标文件。
+     *
+     * [validatedParents] 是本次解压内「已经验证过、且没有被替换成软链」的父目录集合：
+     * 相邻条目通常在同一目录，命中缓存时只做字符串拼接，省掉每个条目一次 realpath
+     * （Debian 级 rootfs 约 2 万条目，realpath 会逐组件 readlink）。
+     * 创建软链时会把该路径及其子树从缓存里剔除，保证不会顺着软链写到 rootfs 之外。
+     */
+    private fun safeResolve(
+        root: File,
+        path: String,
+        validatedParents: MutableSet<String>? = null,
+    ): File {
         val normalized = normalizeTarPath(path)
-        val target = File(root, normalized).canonicalFile
-        require(target.path == root.path || target.path.startsWith(root.path + File.separator)) {
+        val target = File(root, normalized)
+        val parentPath = target.parentFile?.absolutePath
+        if (validatedParents != null && parentPath != null && parentPath in validatedParents) {
+            return target
+        }
+        val canonical = target.canonicalFile
+        require(canonical.path == root.path || canonical.path.startsWith(root.path + File.separator)) {
             "Rootfs entry escapes target directory: $path"
         }
-        return target
+        if (validatedParents != null && parentPath != null) {
+            validatedParents += parentPath
+        }
+        return canonical
+    }
+
+    /** 某路径变成软链后，之前缓存的「父目录已校验」全部失效（含其子树）。 */
+    private fun invalidateValidatedParents(validatedParents: MutableSet<String>, path: String) {
+        validatedParents.remove(path)
+        val prefix = path + File.separator
+        validatedParents.removeAll { it.startsWith(prefix) }
     }
 
     private fun File.applyMode(mode: Int) {

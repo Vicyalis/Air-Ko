@@ -25,6 +25,8 @@ import me.rerere.workspace.WorkspaceDesktopPlan
 import me.rerere.workspace.WorkspaceDesktopStatus
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.concurrent.TimeUnit
 
 /** 正在执行的桌面动作; busy 用来禁用同一工作区的其它按钮 */
@@ -298,12 +300,42 @@ class WorkspaceDesktopManager internal constructor(
             detached = true,
         )
 
-        if (awaitHttpState(plan.port, wantRunning = true, workspaceId = workspaceId)) return@launchAction null
+        if (awaitHttpState(plan.port, wantRunning = true, workspaceId = workspaceId)) {
+            // 端口通了不等于服务可用: code-server 要等第一个 HTTP 请求才加载 VS Code。
+            // 先在宿主侧打一次根路径，把 3~8 秒的服务端加载藏进转场。
+            warmUp(plan)
+            return@launchAction null
+        }
         WorkspaceDesktopFailure(
             kind = WorkspaceDesktopFailure.Kind.START_FAILED,
             port = plan.port,
             logTail = readRuntimeLog(workspaceId),
         )
+    }
+
+    /**
+     * 预热：桌面端口一就绪就先请求一次首页，触发服务端懒加载（code-server 尤其明显）。
+     * 失败不影响启动结果——真正的可用性仍由端口探测与 WebView 决定。
+     */
+    private suspend fun warmUp(plan: WorkspaceDesktopPlan) = withContext(Dispatchers.IO) {
+        if (plan.port <= 0) return@withContext
+        runCatching {
+            val connection = (URL("http://127.0.0.1:${plan.port}/").openConnection() as HttpURLConnection).apply {
+                connectTimeout = WARM_UP_TIMEOUT_MS.toInt()
+                readTimeout = WARM_UP_TIMEOUT_MS.toInt()
+                requestMethod = "GET"
+                instanceFollowRedirects = true
+            }
+            try {
+                connection.responseCode
+                connection.inputStream.use { stream ->
+                    val buffer = ByteArray(2048)
+                    stream.read(buffer)
+                }
+            } finally {
+                connection.disconnect()
+            }
+        }
     }
 
     /** 停止桌面, 并等端口不再响应 */
@@ -620,6 +652,7 @@ class WorkspaceDesktopManager internal constructor(
 
         /** 启动等待：proot 冷启动 + node 起服务在手机上可能要几十秒，给足时间 */
         const val START_WAIT_MS = 75_000L
+        private const val WARM_UP_TIMEOUT_MS = 8_000L
 
         /**
          * 停止等待：websockify 退出要先关掉 WebSocket 连接、cage 偶发不吃 SIGTERM，
