@@ -33,13 +33,16 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Copy01
+import me.rerere.hugeicons.stroke.TextQuote
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.utils.copyMessageToClipboard
 
 @Composable
 fun ChatMessageCopySheet(
     message: UIMessage,
-    onDismissRequest: () -> Unit
+    onDismissRequest: () -> Unit,
+    /** 选中/查看全文的同时可直接把这段内容作为引用带回输入框 */
+    onQuote: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     ModalBottomSheet(
@@ -73,19 +76,37 @@ fun ChatMessageCopySheet(
                     style = MaterialTheme.typography.headlineSmall,
                 )
 
-                TextButton(
-                    onClick = {
-                        context.copyMessageToClipboard(message)
-                        onDismissRequest()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (onQuote != null) {
+                        TextButton(
+                            onClick = {
+                                onQuote()
+                                onDismissRequest()
+                            }
+                        ) {
+                            Icon(
+                                imageVector = HugeIcons.TextQuote,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.chat_message_quote))
+                        }
                     }
-                ) {
-                    Icon(
-                        imageVector = HugeIcons.Copy01,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.copy_all))
+                    TextButton(
+                        onClick = {
+                            context.copyMessageToClipboard(message)
+                            onDismissRequest()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.Copy01,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.copy_all))
+                    }
                 }
             }
 

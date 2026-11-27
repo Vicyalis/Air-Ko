@@ -265,7 +265,8 @@ fun ChatMessage(
             message = message,
             onDismissRequest = {
                 showSelectCopySheet = false
-            }
+            },
+            onQuote = onQuote?.let { quote -> { quote(message) } },
         )
     }
 }

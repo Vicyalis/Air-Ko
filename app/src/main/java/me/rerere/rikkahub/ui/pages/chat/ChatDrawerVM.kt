@@ -127,6 +127,8 @@ class ChatDrawerVM(
     val scrollOffset: Int get() = savedStateHandle["scrollOffset"] ?: 0
 
     // 会话费用估算：抽屉里每个会话显示一行金额。一次 SQL 聚合全部会话，避免按条目查询
+    @Volatile
+    private var lastCostRefreshAt = 0L
     private val _conversationCosts = MutableStateFlow<Map<String, ConversationCost>>(emptyMap())
     val conversationCosts: StateFlow<Map<String, ConversationCost>> = _conversationCosts.asStateFlow()
 
@@ -141,8 +143,16 @@ class ChatDrawerVM(
         refreshConversationCosts()
     }
 
-    /** 重新聚合会话费用；发消息后金额会变，抽屉打开时调用一次即可 */
-    fun refreshConversationCosts() {
+    /**
+     * 重新聚合会话费用。
+     *
+     * 这条 SQL 会对整张 message_node 做 json_each 展开，会话多时并不便宜；
+     * 抽屉反复开关时用 10s 内的缓存挡住重复查询（发消息后的金额变化最多晚 10s）。
+     */
+    fun refreshConversationCosts(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastCostRefreshAt < COST_REFRESH_TTL_MS) return
+        lastCostRefreshAt = now
         viewModelScope.launch {
             val costs = withContext(Dispatchers.IO) {
                 runCatching { messageNodeDAO.getModelTokenStats().toConversationCosts() }
@@ -220,3 +230,5 @@ class ChatDrawerVM(
         }
     }
 }
+
+private const val COST_REFRESH_TTL_MS = 10_000L

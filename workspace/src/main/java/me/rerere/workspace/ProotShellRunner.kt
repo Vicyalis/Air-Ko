@@ -114,6 +114,10 @@ class ProotShellRunner(
         if (context.killOnExit) {
             command += "--kill-on-exit"
         }
+        // 桌面会话里的 X / dbus / 部分桌面组件会用到 SysV IPC；proot 默认让它们 ENOSYS
+        if (context.detachedOutputPath != null) {
+            command += "--sysvipc"
+        }
         command += listOf(
             "-r",
             context.linuxDir.absolutePath,
