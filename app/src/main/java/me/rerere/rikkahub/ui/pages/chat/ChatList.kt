@@ -546,8 +546,13 @@ private fun ChatListNormal(
                     selectedItems.clear()
                 },
                 conversation = conversation,
-                selectedMessages = conversation.messageNodes.filter { it.id in selectedItems }
-                    .map { it.currentMessage }
+                // 面板关闭时不要每个 chunk 都全量过滤一遍（原来的写法会随流式持续执行）
+                selectedMessages = if (showExportSheet) {
+                    conversation.messageNodes.filter { it.id in selectedItems }
+                        .map { it.currentMessage }
+                } else {
+                    emptyList()
+                }
             )
 
             val captureProgress = LocalScrollCaptureInProgress.current

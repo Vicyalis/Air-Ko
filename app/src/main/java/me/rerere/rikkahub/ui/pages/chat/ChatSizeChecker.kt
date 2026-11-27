@@ -36,14 +36,22 @@ private val DefaultSizeInfo = ConversationSizeInfo(
 
 @Composable
 fun rememberConversationSizeInfo(conversation: Conversation): ConversationSizeInfo {
-    return remember(conversation.messageNodes) {
-        val nodeCount = conversation.messageNodes.size
-        val lastAssistantInputTokens = conversation.messageNodes.asReversed()
-            .map { it.currentMessage }
-            .firstOrNull { it.role == MessageRole.ASSISTANT }
-            ?.usage
-            ?.promptTokens
-            ?: 0
+    val nodes = conversation.messageNodes
+    val nodeCount = nodes.size
+    val tail = nodes.lastOrNull()?.currentMessage
+    // 流式期间每个 chunk 都会产生新的 nodes 列表；用「数量 + 末条消息标识 + token 数」做 key，
+    // 避免每 chunk 都做一次全量扫描并分配 asReversed()/map 的临时列表。
+    val tailTokens = if (tail?.role == MessageRole.ASSISTANT) tail.usage?.promptTokens ?: 0 else -1
+    return remember(nodeCount, tail?.id, tail?.role, tailTokens) {
+        val lastAssistantInputTokens = if (tail?.role == MessageRole.ASSISTANT) {
+            tail.usage?.promptTokens ?: 0
+        } else {
+            nodes.lastOrNull { it.currentMessage.role == MessageRole.ASSISTANT }
+                ?.currentMessage
+                ?.usage
+                ?.promptTokens
+                ?: 0
+        }
         val exceedNodeCountThreshold = nodeCount > MESSAGE_NODE_WARNING_THRESHOLD
         val exceedInputTokenThreshold = lastAssistantInputTokens > LAST_ASSISTANT_INPUT_TOKEN_WARNING_THRESHOLD
         ConversationSizeInfo(

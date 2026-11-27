@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -66,6 +67,7 @@ class WorkspaceTerminalService : Service() {
         SupervisorJob() + Dispatchers.Main + CoroutineName("WorkspaceTerminalService")
     )
     private var observerJob: Job? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -85,7 +87,31 @@ class WorkspaceTerminalService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        releaseWakeLock()
         serviceScope.cancel()
+    }
+
+    /**
+     * 灭屏后 CPU 会进入休眠，正在跑的编译/安装会被按下暂停键（表现为"卡住"）。
+     * 只在有会话时持有 partial wakelock，并在服务结束时释放；6 小时上限防止异常泄漏。
+     */
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        runCatching {
+            val power = getSystemService(POWER_SERVICE) as PowerManager
+            wakeLock = power.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "AirKo:workspace-terminal",
+            ).apply {
+                setReferenceCounted(false)
+                acquire(6 * 60 * 60 * 1000L)
+            }
+        }
+    }
+
+    private fun releaseWakeLock() {
+        runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        wakeLock = null
     }
 
     private fun startObservingSessions() {
@@ -93,9 +119,11 @@ class WorkspaceTerminalService : Service() {
         observerJob = serviceScope.launch {
             sessionManager.activeSessionCount.collect { sessionCount ->
                 if (sessionCount > 0) {
+                    acquireWakeLock()
                     updateNotification(buildRunningNotification(sessionCount))
                 } else {
                     // 没有会话就没什么要保活的了，撤掉通知并结束自己
+                    releaseWakeLock()
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 }

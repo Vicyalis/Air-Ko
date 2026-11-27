@@ -284,6 +284,8 @@ private fun MessagePartsBlock(
     onUserMessageClick: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    // 流式期间每个 chunk 都触发布局动画既贵又抖；生成结束后再启用
+    val contentSizeAnimation = if (loading) Modifier else Modifier.animateContentSize()
     // 消息输出HapticFeedback
     val hapticFeedback = LocalHapticFeedback.current
     val settings = LocalSettings.current
@@ -385,7 +387,7 @@ private fun MessagePartsBlock(
                                     // 用户气泡不占满整行，和助手的回复错开
                                     modifier = Modifier
                                         .padding(start = 48.dp)
-                                        .animateContentSize(),
+                                        .then(contentSizeAnimation),
                                 ) {
                                     MarkdownBlock(
                                         content = part.text.replaceRegexes(
@@ -401,7 +403,7 @@ private fun MessagePartsBlock(
                                     ChatMessageBubble(
                                         role = role,
                                         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
-                                        modifier = Modifier.animateContentSize(),
+                                        modifier = contentSizeAnimation,
                                     ) {
                                         MarkdownBlock(
                                             content = part.text.replaceRegexes(
@@ -420,8 +422,7 @@ private fun MessagePartsBlock(
                                             visual = true,
                                         ),
                                         onClickCitation = handleClickCitation,
-                                        modifier = Modifier
-                                            .animateContentSize()
+                                        modifier = contentSizeAnimation
                                     )
                                 }
                             }

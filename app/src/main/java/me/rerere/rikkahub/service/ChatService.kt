@@ -1259,7 +1259,10 @@ class ChatService(
 
         // 会话落库即视为开始，此时把助手的配置固定到会话上
         val settings = settingsStore.awaitLoaded()
-        val updatedConversation = conversation.bindConfig(settings).fillModelSnapshots(settings)
+        // bindConfig/fillModelSnapshots 会遍历全部消息；放到 Default 线程，避免保存时卡主线程
+        val updatedConversation = withContext(Dispatchers.Default) {
+            conversation.bindConfig(settings).fillModelSnapshots(settings)
+        }
         updateConversation(conversationId, updatedConversation)
 
         if (!exists) {
