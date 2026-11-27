@@ -83,6 +83,13 @@ class ProotShellRunner(
             environment()["PROOT_LOADER"] = loader.absolutePath
             environment()["PROOT_TMP_DIR"] = context.tempDir.absolutePath
             environment()["TMPDIR"] = context.tempDir.absolutePath
+            // link2symlink 的产物集中到 rootfs 内固定目录: 并发会话一个显式一个隐式会 race,
+            // 且集中后备份/清理/诊断都只要看一处 (与 proot-distro 的做法一致)
+            environment()["PROOT_L2S_DIR"] = File(context.linuxDir, L2S_DIR_NAME)
+                .apply { mkdirs() }.absolutePath
+            // 宿主的 LD_* 不该泄漏进 proot 自身, 否则偶发 "CANNOT LINK EXECUTABLE"
+            environment().remove("LD_PRELOAD")
+            environment().remove("LD_LIBRARY_PATH")
         }
 
     private fun buildCommand(
@@ -142,7 +149,9 @@ class ProotShellRunner(
             "NO_COLOR=1",
             "PAGER=cat",
             WorkspaceManager.rootfsShell(context.linuxDir),
-            "-l",
+            // 一次性命令不是登录 shell: 环境已由上面的 env -i 完全确定,
+            // 再加 -l 只会让 Debian/Ubuntu 把 /etc/profile.d/* (含 bash_completion) 重跑一遍,
+            // 每条命令白付 10~150ms。需要登录态的交互场景走终端会话 (它本来就没有 -l)。
             "-c",
             // 命令通过位置参数传入, 避免任何转义; eval "$2" 对命令文本只求值一次, 等价于 bash -c "$cmd"
             "cd -- \"\$1\" && eval \"\$2\"",
@@ -165,6 +174,7 @@ class ProotShellRunner(
     private companion object {
         private const val PROOT_EXEC = "libproot_exec.so"
         private const val PROOT_LOADER = "libproot_loader.so"
+        private const val L2S_DIR_NAME = ".l2s"
         private val WORKSPACE_DIR = WorkspaceManager.ROOTFS_WORKSPACE_DIR
     }
 }

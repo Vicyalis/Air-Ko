@@ -53,6 +53,8 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "ChatVM"
 
+private const val QUOTE_MAX_LINES = 6
+
 class ChatVM(
     id: String,
     private val temporary: Boolean,
@@ -71,6 +73,28 @@ class ChatVM(
 
     // 聊天输入状态 - 保存在 ViewModel 中避免 TransactionTooLargeException
     val inputState = ChatInputState()
+
+    /**
+     * 引用一条消息并追问：把正文的前几行以 Markdown 引用块（>）填进输入框。
+     *
+     * 不改消息结构、不加新的 part 类型，纯文本前缀即可被模型正确理解为"针对这段内容的追问"；
+     * 后续如果要做带 messageId 的结构化引用，再在此基础上扩展。
+     */
+    fun quoteMessage(message: UIMessage) {
+        val text = message.parts
+            .filterIsInstance<UIMessagePart.Text>()
+            .joinToString("\n\n") { it.text }
+            .trim()
+        if (text.isBlank()) return
+        val quoted = text.lineSequence()
+            .filter { it.isNotBlank() }
+            .take(QUOTE_MAX_LINES)
+            .joinToString("\n") { "> ${it.trimEnd()}" }
+        val current = inputState.textContent.text.toString()
+        inputState.setMessageText(
+            if (current.isBlank()) "$quoted\n\n" else "$quoted\n\n$current"
+        )
+    }
 
     val voiceSession = VoiceSessionController(viewModelScope, context::getString) {
         chatService.enqueueVoiceMessage(_conversationId, it)

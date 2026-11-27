@@ -51,6 +51,7 @@ import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.hugeicons.stroke.Refresh03
 import me.rerere.hugeicons.stroke.Share04
 import me.rerere.hugeicons.stroke.StopCircle
+import me.rerere.hugeicons.stroke.TextQuote
 import me.rerere.hugeicons.stroke.TextSelection
 import me.rerere.hugeicons.stroke.Translate
 import me.rerere.hugeicons.stroke.VolumeHigh
@@ -263,6 +264,7 @@ fun ChatMessageActionsSheet(
     onShare: () -> Unit,
     onFork: () -> Unit,
     onSelectAndCopy: () -> Unit,
+    onQuote: (() -> Unit)? = null,
     isFavorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
     onWebViewPreview: () -> Unit,
@@ -277,6 +279,15 @@ fun ChatMessageActionsSheet(
             .any { it.text.isNotBlank() }
         val actions = buildList {
             add(MessageSheetAction(HugeIcons.TextSelection, stringResource(R.string.select_and_copy), onClick = onSelectAndCopy))
+            if (onQuote != null) {
+                add(
+                    MessageSheetAction(
+                        icon = HugeIcons.TextQuote,
+                        label = stringResource(R.string.chat_message_quote),
+                        onClick = { onQuote.invoke() },
+                    )
+                )
+            }
             if (hasTextContent) {
                 add(MessageSheetAction(HugeIcons.WebDesign01, stringResource(R.string.render_with_webview), onClick = onWebViewPreview))
             }

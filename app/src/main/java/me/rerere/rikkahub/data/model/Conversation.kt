@@ -63,6 +63,27 @@ data class Conversation(
         return messageNodes.firstOrNull { node -> node.messages.any { it.id == messageId } }
     }
 
+    /**
+     * 流式更新的快速路径：只替换「最后一条」消息。
+     *
+     * 生成过程中每个 chunk 都携带整份消息列表，但只有最后一条在变；走通用
+     * [updateCurrentMessages] 会为每个 chunk 重建全部 n 个 MessageNode（any{} + indexOfFirst{}）。
+     * 仅当 [message] 与当前最后节点选中的那条 id 相同时生效，其余情况返回 null 交给通用路径。
+     */
+    fun updateStreamingMessage(message: UIMessage): Conversation? {
+        if (messageNodes.isEmpty()) return null
+        val lastIndex = messageNodes.lastIndex
+        val node = messageNodes[lastIndex]
+        val selected = node.messages.getOrNull(node.selectIndex) ?: return null
+        if (selected.id != message.id) return null
+        val updatedNode = node.copy(
+            messages = node.messages.toMutableList().apply { this[node.selectIndex] = message },
+        )
+        return copy(
+            messageNodes = messageNodes.toMutableList().apply { this[lastIndex] = updatedNode },
+        )
+    }
+
     fun updateCurrentMessages(messages: List<UIMessage>): Conversation {
         val newNodes = this.messageNodes.toMutableList()
 

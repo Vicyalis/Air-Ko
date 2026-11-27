@@ -40,6 +40,18 @@ class ConversationRepository(
     companion object {
         private const val PAGE_SIZE = 20
         private const val INITIAL_LOAD_SIZE = 40
+        private const val MAX_CACHED_CONVERSATIONS = 32
+    }
+
+    /**
+     * 每个会话「上一次落库时」的节点消息引用。
+     *
+     * UIMessage 是不可变对象，流式更新只会替换最后一条，历史消息的实例保持不变；
+     * 因此用引用相等就能判断节点是否真的变了，避免每次保存都把全部节点重新序列化、整表重写。
+     */
+    private val savedNodeMessages = object : LinkedHashMap<String, Map<String, List<UIMessage>>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Map<String, List<UIMessage>>>?): Boolean =
+            size > MAX_CACHED_CONVERSATIONS
     }
 
     suspend fun hasFileReference(fileUrl: String): Boolean =
@@ -318,6 +330,10 @@ class ConversationRepository(
             )
             saveMessageNodes(conversation.id.toString(), conversation.messageNodes)
         }
+        synchronized(savedNodeMessages) {
+            savedNodeMessages[conversation.id.toString()] =
+                conversation.messageNodes.associate { it.id.toString() to it.messages }
+        }
         messageFtsManager.indexConversation(conversation)
     }
 
@@ -326,14 +342,13 @@ class ConversationRepository(
             conversationDAO.update(
                 conversationToConversationEntity(conversation)
             )
-            // 删除旧的节点，插入新的节点
-            messageNodeDAO.deleteByConversation(conversation.id.toString())
-            saveMessageNodes(conversation.id.toString(), conversation.messageNodes)
+            syncMessageNodes(conversation)
         }
         messageFtsManager.indexConversation(conversation)
     }
 
     suspend fun deleteConversation(conversation: Conversation) {
+        synchronized(savedNodeMessages) { savedNodeMessages.remove(conversation.id.toString()) }
         // 获取完整的 Conversation（包含 messageNodes）以正确清理文件
         val fullConversation = if (conversation.messageNodes.isEmpty()) {
             getConversationById(conversation.id) ?: conversation
@@ -467,6 +482,26 @@ class ConversationRepository(
         )
     }
 
+    /**
+     * 只更新会话的推荐问句，不重写消息节点、不重建 FTS 正文。
+     * 生成建议原本走 saveConversation，会把整会话删/插一遍。
+     */
+    suspend fun updateChatSuggestions(conversationId: Uuid, suggestions: List<String>) {
+        conversationDAO.updateSuggestions(
+            id = conversationId.toString(),
+            suggestions = JsonInstant.encodeToString(suggestions),
+        )
+    }
+
+    /**
+     * 只更新会话标题（同时更新 FTS 里的标题列），不重写消息节点。
+     * 自动生成标题原本也走 saveConversation。
+     */
+    suspend fun updateConversationTitle(conversationId: Uuid, title: String) {
+        conversationDAO.updateTitle(conversationId.toString(), title)
+        messageFtsManager.updateTitle(conversationId.toString(), title)
+    }
+
     private fun conversationSummaryToConversation(entity: LightConversationEntity): Conversation {
         return Conversation(
             id = Uuid.parse(entity.id),
@@ -523,6 +558,46 @@ class ConversationRepository(
             }
             nodes
         }
+    }
+
+    /**
+     * 增量同步：只写真正变化的节点，并删除被移除的节点。
+     *
+     * 旧实现每次保存都是「删光整表 + 全量插入」：500 条消息的会话每轮对话（3~4 次保存）
+     * 要重写约 1500 行，这是长会话"越聊越慢、越聊越烫"的直接来源之一。
+     */
+    private suspend fun syncMessageNodes(conversation: Conversation) {
+        val conversationId = conversation.id.toString()
+        val previous = synchronized(savedNodeMessages) { savedNodeMessages[conversationId] }.orEmpty()
+        val existing = messageNodeDAO.getNodesOfConversation(conversationId).associateBy { it.id }
+
+        val current = LinkedHashMap<String, List<UIMessage>>(conversation.messageNodes.size)
+        val changed = ArrayList<MessageNodeEntity>(2)
+        conversation.messageNodes.forEachIndexed { index, node ->
+            val nodeId = node.id.toString()
+            current[nodeId] = node.messages
+            val previousMessages = previous[nodeId]
+            val existingEntity = existing[nodeId]
+            val sameMessages = previousMessages != null &&
+                previousMessages.size == node.messages.size &&
+                previousMessages.indices.all { previousMessages[it] === node.messages[it] }
+            val sameRow = existingEntity != null &&
+                existingEntity.nodeIndex == index &&
+                existingEntity.selectIndex == node.selectIndex
+            if (!sameMessages || !sameRow) {
+                changed += MessageNodeEntity(
+                    id = nodeId,
+                    conversationId = conversationId,
+                    nodeIndex = index,
+                    messages = JsonInstant.encodeToString(node.messages),
+                    selectIndex = node.selectIndex,
+                )
+            }
+        }
+        val removedIds = existing.keys.filterNot { it in current }
+        if (removedIds.isNotEmpty()) messageNodeDAO.deleteByIds(removedIds)
+        if (changed.isNotEmpty()) messageNodeDAO.insertAll(changed)
+        synchronized(savedNodeMessages) { savedNodeMessages[conversationId] = current }
     }
 
     private suspend fun saveMessageNodes(conversationId: String, nodes: List<MessageNode>) {

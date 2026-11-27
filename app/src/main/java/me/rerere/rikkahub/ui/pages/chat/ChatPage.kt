@@ -454,6 +454,9 @@ private fun ChatPageContent(
                     inputState.editingMessage = it.id
                     inputState.setContents(it.parts)
                 },
+                onQuoteMessage = {
+                    vm.quoteMessage(it)
+                },
                 onForkMessage = {
                     scope.launch {
                         val fork = vm.forkMessage(message = it)

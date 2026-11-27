@@ -19,6 +19,7 @@ import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.workspace.RootfsPatchOptions
 import me.rerere.workspace.RootfsPatcher
 import me.rerere.workspace.WorkspaceManager
+import me.rerere.workspace.WorkspaceProcessControl
 import me.rerere.workspace.WorkspaceRuntimeBinds
 import java.io.File
 
@@ -40,7 +41,11 @@ internal val TerminalSession.isAlive: Boolean
  * 只有拿到真实 pid 才允许结束；pid 0（未启动）与 -1（已退出）都直接放过。
  */
 internal fun TerminalSession.finishIfRunningSafely() {
-    if (pid > 0) finishIfRunning()
+    if (pid <= 0) return
+    // Termux 的 finishIfRunning() 直接 SIGKILL: 而 proot 的 --kill-on-exit 清理只在
+    // 它自己正常退出时才跑, SIGKILL 会把整棵 guest 进程树放生。这里改成
+    // SIGQUIT -> 宽限 2s -> SIGKILL (异步, 不阻塞调用方)。
+    WorkspaceProcessControl.terminatePid(pid)
 }
 
 internal fun createWorkspaceTerminalSession(
@@ -105,6 +110,8 @@ internal fun createWorkspaceTerminalSession(
         "PROOT_LOADER=${loader.absolutePath}",
         "PROOT_TMP_DIR=${tempDir.absolutePath}",
         "TMPDIR=${tempDir.absolutePath}",
+        // link2symlink 产物集中一处, 避免并发会话隐式/显式目录 race
+        "PROOT_L2S_DIR=${File(linuxDir, ".l2s").apply { mkdirs() }.absolutePath}",
     )
 
     if (shellCompatibilityMode) {

@@ -522,6 +522,10 @@ class WorkspaceDesktopManager internal constructor(
 
     /** rootfs 内的探测脚本; 退出码 0 才算装好 */
     private suspend fun probeInstalled(workspaceId: String, plan: WorkspaceDesktopPlan): Boolean {
+        // 宿主侧能判定的安装（固定装到 rootfs 内某个路径）不必起 proot
+        plan.hostProbePath?.let { relativePath ->
+            if (repository.hasRootfsFile(workspaceId, relativePath)) return true
+        }
         val probe = plan.probeScript ?: return true
         val result = repository.executeCommand(
             id = workspaceId,

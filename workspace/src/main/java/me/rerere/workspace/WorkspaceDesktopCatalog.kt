@@ -59,6 +59,8 @@ enum class WorkspacePackageManager {
  *
  * @param installScript 安装脚本; null 表示该方案没有安装动作 (不使用 / 自定义)
  * @param probeScript 安装结果探测脚本, 退出码 0 才算装好; null 表示没有可探测的安装结果
+ * @param hostProbePath 可选的「相对 rootfs 根」的文件路径。命中即可判定为已安装，
+ *   不必为此起一个 proot（code-server 的探测原本要 2.5~5 秒）
  * @param startScript 启动脚本, 内部自己 nohup 并重定向到 [WorkspaceDesktopCatalog.LOG_PATH]
  * @param stopScript 停止脚本, 只负责发信号; 是否真的停了由 App 侧端口探测确认
  * @param port 监听端口; 0 表示未知 (自定义方案没填端口)
@@ -77,6 +79,7 @@ data class WorkspaceDesktopPlan(
     val url: String?,
     val sizeHintBytes: Long?,
     val installMinutes: Int?,
+    val hostProbePath: String? = null,
 )
 
 /** 桌面在 UI 上的状态, 由 [WorkspaceDesktopCatalog.statusOf] 从探测结果推导 */
@@ -246,6 +249,8 @@ object WorkspaceDesktopCatalog {
             packageManager = packageManager,
             installScript = codeServerInstallScript(),
             probeScript = CODE_SERVER_PROBE,
+            // 安装脚本固定装到 $HOME/.airko/code-server（HOME=/root），宿主侧 stat 即可
+            hostProbePath = "root/.airko/code-server/bin/code-server",
             startScript = codeServerStartScript(),
             stopScript = codeServerStopScript(),
             port = PORT_CODE_SERVER,
@@ -614,14 +619,14 @@ object WorkspaceDesktopCatalog {
         "rm -f /tmp/.X11-unix/X99 /tmp/.X99-lock",
         "# 三个进程都只监听回环; websockify(noVNC 网页 + websocket) 是唯一入口, 只有 App 的 WebView 会连它",
         "nohup Xvfb :99 -screen 0 1280x800x24 -nolisten tcp > $LOG_PATH 2>&1 &",
-        "sleep 1",
+        // 等 X socket 就绪（固定 sleep 在快机上是纯等待，慢机上又不够）
+        "for __airko_i in \$(seq 1 50); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.1; done",
         "nohup fluxbox >> $LOG_PATH 2>&1 &",
-        "sleep 2",
         "# 主动开一个终端窗口, 不然用户只能看到空桌面",
         "(command -v xterm >/dev/null 2>&1 && nohup xterm -geometry 80x24+10+10 >> $LOG_PATH 2>&1 &)",
         "# proot 里没有 SysV 共享内存 (shmget ENOSYS), 不加 -noshm 的话 x11vnc 会直接退出",
         "nohup x11vnc -display :99 -forever -shared -nopw -localhost -noshm -rfbport $VNC_RAW_PORT >> $LOG_PATH 2>&1 &",
-        "sleep 2",
+        "for __airko_i in \$(seq 1 50); do pgrep -x x11vnc >/dev/null 2>&1 && break; sleep 0.1; done",
         // x11vnc 起不来时明确失败, 别让 websockify 独自撑着让用户看黑屏
         "pgrep -x x11vnc >/dev/null 2>&1 || { echo 'x11vnc did not start' >> $LOG_PATH; exit 1; }",
         vncWebFrontendStartLines(),
@@ -772,7 +777,6 @@ object WorkspaceDesktopCatalog {
             "org.freedesktop.DBus.ListNames >/dev/null 2>&1; then",
         "  rm -f /run/dbus/system_bus_socket",
         "  dbus-daemon --config-file=\"\$HOME/.airko/airko-system-bus.conf\" --fork >> $LOG_PATH 2>&1 || true",
-        "  sleep 1",
         "fi",
         // 总线起不来 shell 必崩 (endSessionDialog -> AccountsService 连不上系统总线), 明确报错退出
         "if ! dbus-send --system --dest=org.freedesktop.DBus --type=method_call --print-reply / " +
@@ -784,11 +788,12 @@ object WorkspaceDesktopCatalog {
         "[ -n \"\$VNCBIN\" ] || { echo 'tigervnc server binary not found' >&2; exit 1; }",
         "nohup \"\$VNCBIN\" :1 -geometry 1280x800 -depth 24 -SecurityTypes None " +
             "-rfbport $VNC_RAW_PORT -localhost -AlwaysShared >> $LOG_PATH 2>&1 &",
-        "sleep 3",
+        "for __airko_i in \$(seq 1 50); do [ -S /tmp/.X11-unix/X1 ] && break; sleep 0.1; done",
         "eval \"\$(dbus-launch --sh-syntax)\"",
         "echo \"\$DBUS_SESSION_BUS_PID\" > /tmp/airko-gnome-bus.pid",
         "(export XDG_SESSION_TYPE=x11 LIBGL_ALWAYS_SOFTWARE=1; nohup gnome-shell --x11 >> $LOG_PATH 2>&1 &)",
-        "sleep 5",
+        // 等 shell 进程出现再判活（0.5s 沉降用于抓"起来即崩"），而不是固定 5s
+        "for __airko_i in \$(seq 1 50); do pgrep -f -- 'gnome-shell --x11' >/dev/null 2>&1 && { sleep 0.5; break; }; sleep 0.1; done",
         // 起完就死要当失败报出去, 而不是让用户对着黑屏等端口探测超时
         "pgrep -f -- 'gnome-shell --x11' >/dev/null 2>&1 || { echo 'gnome-shell did not stay up' >> $LOG_PATH; exit 1; }",
         vncWebFrontendStartLines(),
@@ -882,7 +887,7 @@ object WorkspaceDesktopCatalog {
         "(WAYLAND_DISPLAY=wayland-1 nohup wayvnc -o winit 127.0.0.1 $VNC_RAW_PORT >> $LOG_PATH 2>&1 &)",
         "# 触屏用户没有 Super 键, 主动开一个终端窗口, 不然进来只能看到黑屏",
         "(command -v foot >/dev/null 2>&1 && WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run nohup foot >/dev/null 2>&1 &)",
-        "sleep 2",
+        "for __airko_i in \$(seq 1 50); do pgrep -f -- 'wayvnc' >/dev/null 2>&1 && break; sleep 0.1; done",
         vncWebFrontendStartLines(),
     )
 
@@ -981,7 +986,7 @@ object WorkspaceDesktopCatalog {
         "  echo 'dbus-run-session/dbus-launch not found; install dbus-x11' >> $LOG_PATH",
         "  exit 1",
         "fi",
-        "sleep 5",
+        "for __airko_i in \$(seq 1 50); do { pgrep -f -- 'startplasma' >/dev/null 2>&1 || pgrep -f -- 'plasmashell' >/dev/null 2>&1; } && { sleep 0.5; break; }; sleep 0.1; done",
         // startplasma-x11 可能 exec 成 startplasma/plasmashell, 三者认一个就算起来了
         "pgrep -f -- 'startplasma' >/dev/null 2>&1 || pgrep -f -- 'plasmashell' >/dev/null 2>&1 || " +
             "{ echo 'startplasma-x11 did not stay up' >> $LOG_PATH; exit 1; }",
@@ -1092,7 +1097,7 @@ object WorkspaceDesktopCatalog {
         "  echo 'dbus-run-session/dbus-launch not found; install dbus-x11' >> $LOG_PATH",
         "  exit 1",
         "fi",
-        "sleep 5",
+        "for __airko_i in \$(seq 1 50); do { pgrep -f -- 'cinnamon-session' >/dev/null 2>&1 || pgrep -f -- 'cinnamon' >/dev/null 2>&1; } && { sleep 0.5; break; }; sleep 0.1; done",
         "pgrep -f -- 'cinnamon-session' >/dev/null 2>&1 || pgrep -f -- 'cinnamon' >/dev/null 2>&1 || " +
             "{ echo 'cinnamon-session did not stay up' >> $LOG_PATH; exit 1; }",
         vncWebFrontendStartLines(),
@@ -1210,7 +1215,7 @@ object WorkspaceDesktopCatalog {
         "# 触屏用户没有 Super 键, 主动开一个终端窗口, 不然进来只能看到黑屏",
         "(command -v foot >/dev/null 2>&1 && WAYLAND_DISPLAY=\"\$HYPR_DISPLAY\" XDG_RUNTIME_DIR=/run " +
             "nohup foot >/dev/null 2>&1 &)",
-        "sleep 2",
+        "for __airko_i in \$(seq 1 50); do pgrep -f -- 'wayvnc' >/dev/null 2>&1 && break; sleep 0.1; done",
         vncWebFrontendStartLines(),
     )
 
@@ -1243,11 +1248,11 @@ object WorkspaceDesktopCatalog {
         "    exit 1",
         "  }",
         "  nohup Xvfb :1 -screen 0 1280x800x24 -nolisten tcp >> $LOG_PATH 2>&1 &",
-        "  sleep 1",
+        "  for __airko_i in \$(seq 1 50); do [ -S /tmp/.X11-unix/X1 ] && break; sleep 0.1; done",
         "  nohup x11vnc -display :1 -forever -shared -nopw -localhost -noshm " +
             "-rfbport $VNC_RAW_PORT >> $LOG_PATH 2>&1 &",
         "fi",
-        "sleep 3",
+        "for __airko_i in \$(seq 1 50); do pgrep -f -- 'Xvnc|Xtigervnc|Xvfb :1' >/dev/null 2>&1 && break; sleep 0.1; done",
         "pgrep -f -- 'Xvnc|Xtigervnc|Xvfb :1' >/dev/null 2>&1 || " +
             "{ echo 'VNC X server did not start' >> $LOG_PATH; exit 1; }",
     )

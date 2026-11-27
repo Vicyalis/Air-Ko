@@ -67,7 +67,9 @@ fun Process.readResult(timeoutMillis: Long, stdin: ByteArray? = null): Workspace
     try {
         val finished = waitFor(timeoutMillis, TimeUnit.MILLISECONDS)
         if (!finished) {
-            destroyForcibly()
+            // 超时不能直接 SIGKILL: proot 会忽略 SIGTERM, 而 SIGKILL 让 --kill-on-exit
+            // 的清理不执行, 整棵 guest 进程树被放生。SIGQUIT -> 宽限 -> SIGKILL 才干净。
+            WorkspaceProcessControl.terminate(this)
         }
         stdinWriter?.join(1_000)
         stdout.join(1_000)
@@ -80,8 +82,8 @@ fun Process.readResult(timeoutMillis: Long, stdin: ByteArray? = null): Workspace
             truncated = stdout.truncated || stderr.truncated,
         )
     } catch (e: InterruptedException) {
-        // 调用方线程被中断（如协程取消时的 runInterruptible），杀掉进程避免命令继续执行
-        destroyForcibly()
+        // 调用方线程被中断（如协程取消时的 runInterruptible），优雅终止避免命令继续执行
+        WorkspaceProcessControl.terminate(this, gracefulMillis = 1_000)
         // 进程被杀后 stdout/stderr 会关闭, 这里 join 回收两个采集线程, 避免每次取消泄漏一对线程
         stdinWriter?.join(1_000)
         stdout.join(1_000)

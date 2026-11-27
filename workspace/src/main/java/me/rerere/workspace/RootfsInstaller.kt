@@ -43,24 +43,28 @@ class RootfsInstaller(
         try {
             stagingDir.deleteRecursively()
             stagingDir.mkdirs()
+            requireFreeSpace(tempDir, MIN_FREE_BEFORE_DOWNLOAD, "下载 rootfs 前")
             download(downloadUrl, archive, onProgress)
             if (expectedSha256 != null) {
                 onProgress(RootfsInstallProgress(stage = RootfsInstallStage.VERIFYING))
                 verifyChecksum(archive, expectedSha256)
             }
+            // 压缩包按 4 倍体积估算解压后占用，再留 256MB 余量；装到一半 ENOSPC 会留下半个 rootfs
+            requireFreeSpace(tempDir, archive.length() * 4 + MIN_FREE_AFTER_EXTRACT, "解压 rootfs 前")
             extractTar(archive, stagingDir, format, onProgress)
             // Fedora 这类只发布 OCI 容器归档的发行版：把 layers 解出来当 rootfs
             val rootfsDir = extractOciIfPresent(stagingDir, tempDir, onProgress)
-            linuxDir.deleteRecursively()
-            require(rootfsDir.renameTo(linuxDir)) {
-                "Failed to move rootfs into workspace"
-            }
-            patcher.patch(linuxDir)
+            // 先在 staging 里打完补丁，再原子换位：任何一步失败都不会碰到旧 rootfs
+            patcher.patch(rootfsDir)
+            swapIntoPlace(rootfsDir, linuxDir)
             onProgress(RootfsInstallProgress(stage = RootfsInstallStage.INSTALLED))
             installed = true
         } finally {
-            stagingDir.deleteRecursively()
-            File(tempDir, OCI_ROOTFS_DIR_NAME).deleteRecursively()
+            // 失败时只清理暂存内容，绝不删除旧 linuxDir（旧实现先删再改名，杀进程就会新旧全丢）
+            runCatching {
+                if (!installed) stagingDir.deleteRecursively()
+                File(tempDir, OCI_ROOTFS_DIR_NAME).deleteRecursively()
+            }
             // 只有成功才丢弃压缩包: 失败时保留分片和来源标记, 下次同一地址可以续传或直接复用
             if (installed) {
                 archive.delete()
@@ -590,9 +594,45 @@ class RootfsInstaller(
     }
 
     private fun File.applyMode(mode: Int) {
-        setReadable(mode and 0b100_000_000 != 0, false)
-        setWritable(mode and 0b010_000_000 != 0, true)
-        setExecutable(mode and 0b001_000_000 != 0, false)
+        // tar 头里的 mode 是完整权限位。旧实现只取属主位、再复制给所有人生效，
+        // 会把 0700 的文件装成 0755（~/.ssh 私钥、/etc/sudoers.d/* 直接不可用/不安全）。
+        val permission = mode and 0xFFF
+        val applied = runCatching {
+            android.system.Os.chmod(absolutePath, permission)
+        }.isSuccess
+        if (!applied) {
+            // 非 Android 环境（JVM 单测）或 chmod 失败：退回近似行为，至少不放大权限
+            setReadable(permission and 0b100_000_000 != 0, true)
+            setWritable(permission and 0b010_000_000 != 0, true)
+            setExecutable(permission and 0b001_000_000 != 0, true)
+        }
+    }
+
+    /** 尽量原子地换上新 rootfs：旧目录先改名留存，新目录就位后再删；失败自动回滚。 */
+    private fun swapIntoPlace(newDir: File, target: File) {
+        val backup = File(target.parentFile, "${target.name}.old")
+        backup.deleteRecursively()
+        val hadOld = target.exists()
+        if (hadOld) {
+            require(target.renameTo(backup)) { "Failed to move old rootfs aside" }
+        }
+        if (!newDir.renameTo(target)) {
+            if (hadOld) backup.renameTo(target)
+            error("Failed to move rootfs into workspace")
+        }
+        backup.deleteRecursively()
+    }
+
+    /** 磁盘预检：拿不到 StatFs（JVM 单测）时直接跳过，不阻断安装。 */
+    private fun requireFreeSpace(dir: File, requiredBytes: Long, phase: String) {
+        val available = runCatching {
+            android.os.StatFs(dir.absolutePath).availableBytes
+        }.getOrNull() ?: return
+        require(available >= requiredBytes) {
+            "Insufficient storage for " + phase + ": need " +
+                (requiredBytes / (1024 * 1024)) + " MB, available " +
+                (available / (1024 * 1024)) + " MB"
+        }
     }
 
     // 根目录条目 (如 Alpine minirootfs 开头的 "./") 规范化后为空串, 由调用方跳过
@@ -673,6 +713,8 @@ class RootfsInstaller(
 
     companion object {
         private const val TAR_BLOCK_SIZE = 512
+private const val MIN_FREE_BEFORE_DOWNLOAD = 64L * 1024 * 1024
+private const val MIN_FREE_AFTER_EXTRACT = 256L * 1024 * 1024
         private const val BUFFER_SIZE = 64 * 1024
         private const val PROGRESS_STEP_BYTES = 512 * 1024
         // Android 的 java.net.HttpURLConnection 没有 416 的常量, 这里自己定义

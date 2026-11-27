@@ -97,6 +97,38 @@ suspend fun List<UIMessage>.visualTransforms(
     }
 }
 
+/**
+ * 流式场景的增量版 [visualTransforms]。
+ *
+ * 内置 transformer 的 visualTransform 都是逐条消息独立的；流式期间只有最后一条在变，
+ * 历史消息的视觉结果与上一次相同。这里复用 [previous] 的历史部分，只重算最后一条，
+ * 把每个 chunk 的 O(全部消息) 降到 O(1)。一旦消息数量或历史 id 变化
+ * （例如追加了工具结果），退回全量计算，语义与直接调用 [visualTransforms] 一致。
+ */
+suspend fun List<UIMessage>.visualTransformsIncremental(
+    previous: List<UIMessage>,
+    transformers: List<MessageTransformer>,
+    context: Context,
+    model: Model,
+    assistant: Assistant,
+    settings: Settings,
+): List<UIMessage> {
+    if (isEmpty() || previous.size != size) {
+        return visualTransforms(transformers, context, model, assistant, settings)
+    }
+    for (index in 0 until lastIndex) {
+        if (previous[index].id != this[index].id) {
+            return visualTransforms(transformers, context, model, assistant, settings)
+        }
+    }
+    val lastVisual = subList(lastIndex, size)
+        .visualTransforms(transformers, context, model, assistant, settings)
+    return buildList(size) {
+        addAll(previous.subList(0, lastIndex))
+        addAll(lastVisual)
+    }
+}
+
 suspend fun List<UIMessage>.onGenerationFinish(
     transformers: List<MessageTransformer>,
     context: Context,

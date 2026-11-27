@@ -40,6 +40,7 @@ import me.rerere.rikkahub.data.plugin.PluginManager
 import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
+import me.rerere.rikkahub.data.ai.transformers.visualTransformsIncremental
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Assistant
@@ -115,6 +116,8 @@ class GenerationLoop(
         }
 
         var messages: List<UIMessage> = messages
+        // 上一次发射给 UI 的视觉结果：流式期间历史部分的视觉转换结果不变，只重算最后一条
+        var visualMessages: List<UIMessage> = emptyList()
 
         // 插件提示词整轮生成只读一次；没有启用插件时 buildPromptSection 直接返回空串，不碰磁盘
         val pluginPrompt = if (includePlugins) {
@@ -155,17 +158,17 @@ class GenerationLoop(
                             assistant = assistant,
                             settings = settings
                         )
-                        emit(
-                            GenerationChunk.Messages(
-                                messages.visualTransforms(
-                                    transformers = outputTransformers,
-                                    context = context,
-                                    model = model,
-                                    assistant = assistant,
-                                    settings = settings
-                                )
-                            )
+                        // 历史消息的视觉转换结果在流式期间不变，只重算最后一条，避免每个 chunk 全量 map
+                        val visible = messages.visualTransformsIncremental(
+                            previous = visualMessages,
+                            transformers = outputTransformers,
+                            context = context,
+                            model = model,
+                            assistant = assistant,
+                            settings = settings,
                         )
+                        visualMessages = visible
+                        emit(GenerationChunk.Messages(visible))
                     },
                     transformers = inputTransformers,
                     model = model,

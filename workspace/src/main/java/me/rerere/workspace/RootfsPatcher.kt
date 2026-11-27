@@ -71,6 +71,8 @@ class RootfsPatcher {
         if (hasIpv4Localhost && hasIpv6Localhost) return
 
         hosts.parentFile?.mkdirs()
+        // 镜像可能把 /etc/hosts 做成软链；appendText 会顺链写到 rootfs 之外
+        dropIfSymlink(hosts)
         hosts.appendText(
             buildString {
                 if (hosts.exists() && hosts.length() > 0 && !hosts.readText().endsWith('\n')) {
@@ -94,6 +96,7 @@ class RootfsPatcher {
     private fun ensureHostname(etcDir: File, hostname: String) {
         val target = File(etcDir, "hostname")
         if (target.isFile && target.readText().trim().isNotBlank()) return
+        dropIfSymlink(target)
         target.writeText("${hostname.ifBlank { DEFAULT_HOSTNAME }}\n")
     }
 
@@ -103,11 +106,14 @@ class RootfsPatcher {
         val lines = if (target.isFile) target.readLines().toMutableList() else mutableListOf()
         if (lines.any { it.trim().startsWith("LANG=") }) return
         lines += "LANG=$locale"
+        dropIfSymlink(target)
         target.writeText(lines.joinToString(separator = "\n", postfix = "\n"))
     }
 
     private fun ensureGroupNames(etcDir: File, groupIds: List<Long>) {
         val target = File(etcDir, "group")
+        // 镜像可能把 /etc/group 做成软链；appendText 会顺链写到 rootfs 之外
+        dropIfSymlink(target)
         if (!target.exists()) {
             target.writeText("root:x:0:\n")
         }
@@ -136,6 +142,13 @@ class RootfsPatcher {
                 additions.forEach { appendLine(it) }
             }
         )
+    }
+
+    /** 符号链接就地写入会跟随到 rootfs 之外；先断开再写。 */
+    private fun dropIfSymlink(file: File) {
+        if (Files.isSymbolicLink(file.toPath())) {
+            file.delete()
+        }
     }
 
     private fun ensureTempDirs(linuxDir: File) {

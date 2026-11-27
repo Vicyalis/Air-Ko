@@ -405,6 +405,16 @@ class WorkspaceRepository(
         )
     }
 
+    /**
+     * 宿主侧检查 rootfs 内是否存在某个文件（[relativePath] 相对 rootfs 根）。
+     *
+     * 用于替代"为了一次安装探测就启动一个 proot"：code-server 的探测会因此白烧 2.5~5 秒。
+     */
+    suspend fun hasRootfsFile(id: String, relativePath: String): Boolean = withContext(Dispatchers.IO) {
+        val workspace = getById(id) ?: return@withContext false
+        File(manager.linuxDir(workspace.root), relativePath).isFile
+    }
+
     suspend fun hasRootfs(id: String): Boolean = withContext(Dispatchers.IO) {
         val workspace = dao.getById(id) ?: return@withContext false
         manager.hasRootfs(workspace.root)

@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.update
@@ -721,7 +722,11 @@ class ChatService(
                 },
                 outputTransformers = outputTransformers,
                 tools = tools,
-            ).onCompletion {
+            )
+                // 每个 chunk 都携带整份消息快照，UI 侧只关心“最新一帧”：
+                // conflate 丢掉积压的中间帧，避免主线程被 chunk 淹没后反压上游 SSE。
+                .conflate()
+                .onCompletion {
                 // 可能被取消了，或者意外结束，兜底更新
                 val updatedConversation = session.finishGeneration { conversation ->
                     saveConversation(conversationId, conversation)
@@ -739,9 +744,13 @@ class ChatService(
             }.collect { chunk ->
                 when (chunk) {
                     is GenerationChunk.Messages -> {
-                        val updatedConversation = getConversationFlow(conversationId).value
-                            .updateCurrentMessages(chunk.messages)
-                        updateConversation(conversationId, updatedConversation)
+                        val current = getConversationFlow(conversationId).value
+                        // 只有最后一条在流式变化：走 O(1) 快速路径，避免每 chunk 重建全部节点
+                        val updatedConversation = chunk.messages.lastOrNull()
+                            ?.let(current::updateStreamingMessage)
+                            ?: current.updateCurrentMessages(chunk.messages)
+                        // 流式期间不会删除附件（只会追加），文件回收留到本轮结束的 saveConversation
+                        updateConversation(conversationId, updatedConversation, checkFiles = false)
 
                         // 通知等边缘副作用由 ChatNotificationManager 消费；
                         // tryEmit 不挂起，事件丢失只影响单次通知更新，不能反压生成链
@@ -893,12 +902,13 @@ class ChatService(
                 params = backgroundTextGenerationParams(model, conversationId, settings.fastModelReasoningLevel),
             )
 
-            // 生成完，conversation可能不是最新了，因此需要重新获取
-            conversationRepo.getConversationById(conversation.id)?.let {
-                saveConversation(
-                    conversationId,
-                    it.copy(title = result.message.toText().trim())
-                )
+            // 只更新标题列（含 FTS 标题），不再整会话重读 + 全量重写
+            val title = result.message.toText().trim()
+            if (title.isNotBlank()) {
+                conversationRepo.updateConversationTitle(conversationId, title)
+                sessionManager.get(conversationId)?.let { session ->
+                    session.updateConversation(session.state.value.copy(title = title))
+                }
             }
         }.onFailure {
             it.printStackTrace()
@@ -948,17 +958,12 @@ class ChatService(
                 result.message.toText().split("\n").map { it.trim() }
                     .filter { it.isNotBlank() }
 
-            val latestConversation = conversationRepo.getConversationById(conversationId)
-                ?: sessionManager.get(conversationId)?.state?.value
-                ?: conversation
-            saveConversation(
-                conversationId,
-                latestConversation.copy(
-                    chatSuggestions = suggestions.take(
-                        10
-                    )
-                )
-            )
+            // 建议只影响一列：单列更新，避免又走一遍整会话重写 + FTS 重建
+            val finalSuggestions = suggestions.take(10)
+            conversationRepo.updateChatSuggestions(conversationId, finalSuggestions)
+            sessionManager.get(conversationId)?.let { session ->
+                session.updateConversation(session.state.value.copy(chatSuggestions = finalSuggestions))
+            }
         }.onFailure {
             it.printStackTrace()
         }
@@ -1144,10 +1149,16 @@ class ChatService(
 
     // ---- 对话状态更新 ----
 
-    private fun updateConversation(conversationId: Uuid, conversation: Conversation) {
+    private fun updateConversation(
+        conversationId: Uuid,
+        conversation: Conversation,
+        checkFiles: Boolean = true,
+    ) {
         if (conversation.id != conversationId) return
         val session = sessionManager.getOrCreate(conversationId)
-        checkFilesDelete(conversation, session.state.value)
+        // checkFilesDelete 会把新旧两边的全部消息/part 扁平化再做差集（O(所有 part)）。
+        // 流式 chunk 路径上附件只增不减，跳过它，等本轮结束 saveConversation 时统一回收。
+        if (checkFiles) checkFilesDelete(conversation, session.state.value)
         session.updateConversation(conversation)
     }
 
