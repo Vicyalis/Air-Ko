@@ -520,7 +520,10 @@ object WorkspaceDesktopCatalog {
     private fun codeServerStartScript(): String = script(
         "nohup \"\$HOME/.airko/code-server/bin/code-server\" \\",
         "  --bind-addr 127.0.0.1:$PORT_CODE_SERVER \\",
-        "  --auth none --disable-telemetry --disable-update-check \\",
+        // --trusted-origins *: 反代会重写 Host，VS Code 的 Origin 校验会因此拒绝 WebSocket；
+        // 端口只绑回环 + --auth none，放行任意 Origin 不增加实际暴露面
+        "  --auth none --disable-telemetry --disable-update-check --disable-workspace-trust \\",
+        "  --trusted-origins '*' \\",
         "  /workspace > $LOG_PATH 2>&1 &",
     )
 

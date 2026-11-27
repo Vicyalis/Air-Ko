@@ -201,7 +201,10 @@ class AirKoApp : Application() {
     private fun cleanupWorkspaceTempDirs() {
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
-                get<WorkspaceManager>().cleanupAllTempDirs()
+                val manager = get<WorkspaceManager>()
+                // 先回收上次运行遗留的 proot 进程，再清理它们的临时目录/socket
+                manager.killOrphanedProotProcesses()
+                manager.cleanupAllTempDirs()
             }.onFailure {
                 Log.e(TAG, "cleanupWorkspaceTempDirs failed", it)
             }

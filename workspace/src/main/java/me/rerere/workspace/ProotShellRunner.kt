@@ -15,6 +15,8 @@ class ProotShellRunner(
     private val nativeLibraryDir: File,
     private val patcher: RootfsPatcher = RootfsPatcher(),
 ) : WorkspaceShellRunner {
+    /** rootfs 路径 -> 上次打补丁的时刻（nanoTime），避免每条命令都重写 /etc 下的补丁文件 */
+    private val lastPatchAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
     override fun execute(context: WorkspaceShellContext): WorkspaceCommandResult {
         if (!WorkspaceManager.isUsableRootfs(context.linuxDir)) {
             return WorkspaceCommandResult(
@@ -42,7 +44,14 @@ class ProotShellRunner(
         }
 
         context.tempDir.mkdirs()
-        patcher.patch(context.linuxDir)
+        // 补丁内容（DNS/hosts/locale）只在 60s 内复用：连续命令不必每条都重写一遍，
+        // 切网后又能在一个很短的时间窗内自动刷新
+        val now = System.nanoTime()
+        val lastPatch = lastPatchAt[context.linuxDir.absolutePath]
+        if (lastPatch == null || now - lastPatch > PATCH_TTL_NANOS) {
+            patcher.patch(context.linuxDir)
+            lastPatchAt[context.linuxDir.absolutePath] = now
+        }
 
         val detachedOutputPath = context.detachedOutputPath
         if (detachedOutputPath != null) {
@@ -175,6 +184,7 @@ class ProotShellRunner(
         private const val PROOT_EXEC = "libproot_exec.so"
         private const val PROOT_LOADER = "libproot_loader.so"
         private const val L2S_DIR_NAME = ".l2s"
+        private const val PATCH_TTL_NANOS = 60_000_000_000L
         private val WORKSPACE_DIR = WorkspaceManager.ROOTFS_WORKSPACE_DIR
     }
 }

@@ -338,6 +338,39 @@ class WorkspaceManager(
         WorkspaceStorageArea.LINUX -> linuxDir(root)
     }
 
+    /**
+     * 回收上一次进程崩溃/被系统杀掉后遗留的 proot 进程。
+     *
+     * App 进程死亡时，它 fork 出去的 proot（以及 guest 进程树）不会跟着退出，
+     * 会一直占着 CPU、内存和端口，表现就是"用久了越来越慢"。启动时按 uid +
+     * 可执行文件名精确清理本应用的遗留 proot，不碰任何其他进程。
+     */
+    fun killOrphanedProotProcesses() {
+        val selfPid = android.os.Process.myPid()
+        val myUid = android.os.Process.myUid()
+        val procDirs = File("/proc").listFiles() ?: return
+        for (dir in procDirs) {
+            val pid = dir.name.toIntOrNull() ?: continue
+            if (pid == selfPid) continue
+            val cmdline = runCatching {
+                File(dir, "cmdline").readBytes().toString(Charsets.UTF_8).trimEnd('\u0000')
+            }.getOrNull()?.takeIf { it.isNotBlank() } ?: continue
+            if (!cmdline.contains(PROOT_EXEC_NAME)) continue
+            val ownerUid = runCatching {
+                File(dir, "status").readLines()
+                    .firstOrNull { it.startsWith("Uid:") }
+                    ?.substringAfter("Uid:")
+                    ?.trim()
+                    ?.split(Regex("\\s+"))
+                    ?.firstOrNull()
+                    ?.toIntOrNull()
+            }.getOrNull()
+            if (ownerUid != null && ownerUid != myUid) continue
+            // SIGQUIT 让 proot 自己收尾（它会连带结束 guest 进程树）
+            runCatching { android.system.Os.kill(pid, SIGQUIT) }
+        }
+    }
+
     fun cleanupAllTempDirs() {
         val roots = baseDir.listFiles()?.filter { it.isDirectory } ?: return
         for (dir in roots) {
@@ -350,6 +383,8 @@ class WorkspaceManager(
             File(linuxDir(root), "var/tmp").let { if (it.exists()) it.deleteRecursively() }
             // socket 短路径运行目录 (残留的 wayland/X11 socket 会让下次启动连到死进程)
             runtimeDir(root)?.let { if (it.exists()) it.deleteRecursively() }
+            // link2symlink 的产物: 启动时没有存活会话, 可以整体清掉
+            File(linuxDir(root), L2S_DIR_NAME).let { if (it.exists()) it.deleteRecursively() }
         }
     }
 
@@ -360,6 +395,9 @@ class WorkspaceManager(
         const val LINUX_DIR = "linux"
         private const val TEMP_DIR = "tmp"
         const val DEFAULT_COMMAND_TIMEOUT_MS = 30_000L
+        private const val PROOT_EXEC_NAME = "libproot_exec.so"
+        private const val L2S_DIR_NAME = ".l2s"
+        private const val SIGQUIT = 3
 
         /** Rootfs 内工作区文件区的挂载点 */
         const val ROOTFS_WORKSPACE_DIR = "/workspace"
