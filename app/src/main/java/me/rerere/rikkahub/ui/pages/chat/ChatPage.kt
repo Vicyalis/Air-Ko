@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -257,6 +258,8 @@ private fun ChatPageContent(
     onClearAllErrors: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    // 引用/追问后把焦点送回输入框，用户可以立刻接着打字
+    val inputFocusRequester = remember { FocusRequester() }
     val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
 
@@ -380,6 +383,7 @@ private fun ChatPageContent(
                     assistant = assistant,
                     chatModel = currentChatModel,
                     hazeState = hazeState,
+                    inputFocusRequester = inputFocusRequester,
                     completionProviders = completionProviders,
                     onCancelClick = {
                         vm.stopGeneration()
@@ -456,6 +460,7 @@ private fun ChatPageContent(
                 },
                 onQuoteText = {
                     vm.quoteText(it)
+                    runCatching { inputFocusRequester.requestFocus() }
                 },
                 onForkMessage = {
                     scope.launch {
@@ -688,7 +693,12 @@ private fun TopBar(
                     if (workspaceId == null) {
                         showUnboundTerminalDialog = true
                     } else {
-                        navController.navigate(Screen.WorkspaceTerminal(workspaceId.toString()))
+                        navController.navigate(
+                            Screen.WorkspaceTerminal(
+                                workspaceId.toString(),
+                                conversationId = conversation.id.toString(),
+                            )
+                        )
                     }
                 }
             ) {

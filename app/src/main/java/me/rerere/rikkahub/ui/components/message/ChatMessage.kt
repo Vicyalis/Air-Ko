@@ -26,6 +26,7 @@ import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -40,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -174,6 +176,7 @@ fun ChatMessage(
                 onToolApproval = onToolApproval,
                 onToolAnswer = onToolAnswer,
                 onUserMessageClick = if (message.role == MessageRole.USER) onEdit else null,
+                onQuoteText = onQuoteText,
             )
 
             message.translation?.let { translation ->
@@ -291,8 +294,12 @@ private fun MessagePartsBlock(
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onUserMessageClick: (() -> Unit)? = null,
+    onQuoteText: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    val quoteToolbar = remember(context, onQuoteText) {
+        onQuoteText?.let { QuoteTextToolbar(context = context, onQuote = it) }
+    }
     // 流式期间每个 chunk 都触发布局动画既贵又抖；生成结束后再启用
     val contentSizeAnimation = if (loading) Modifier else Modifier.animateContentSize()
     // 消息输出HapticFeedback
@@ -443,6 +450,13 @@ private fun MessagePartsBlock(
                         // 生成结束后内容稳定，再启用文本选择。
                         if (loading) {
                             textContent()
+                        } else if (quoteToolbar != null) {
+                            // 用自定义 TextToolbar 给系统选择菜单加一条「引用并追问」
+                            CompositionLocalProvider(LocalTextToolbar provides quoteToolbar) {
+                                SelectionContainer {
+                                    textContent()
+                                }
+                            }
                         } else {
                             SelectionContainer {
                                 textContent()

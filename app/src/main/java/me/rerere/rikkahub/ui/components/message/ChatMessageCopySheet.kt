@@ -20,10 +20,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -146,6 +148,34 @@ fun ChatMessageCopySheet(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         textAlign = TextAlign.Center
+                    )
+                }
+            } else if (onQuote != null) {
+                // 只读 TextField 能直接读出选区，不需要经过剪贴板
+                val quoteToolbar = remember(textState, onQuote) {
+                    QuoteTextToolbar(
+                        context = context,
+                        selectionText = {
+                            val selection = textState.selection
+                            if (selection.collapsed) {
+                                null
+                            } else {
+                                textState.text.subSequence(selection.min, selection.max).toString()
+                            }
+                        },
+                        onQuote = onQuote,
+                    )
+                }
+                CompositionLocalProvider(LocalTextToolbar provides quoteToolbar) {
+                    BasicTextField(
+                        state = textState,
+                        readOnly = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                        ),
                     )
                 }
             } else {

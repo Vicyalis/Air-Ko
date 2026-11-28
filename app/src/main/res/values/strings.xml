@@ -254,6 +254,7 @@
   <string name="chat_input_file_read_failed">Failed to read file: %s</string>
   <string name="chat_message_add_favorite">Add Favorite</string>
   <string name="chat_message_quote">Quote</string>
+  <string name="chat_message_quote_and_ask">Quote &amp; ask</string>
   <string name="chat_message_remove_favorite">Remove Favorite</string>
   <string name="chat_message_tool_approve">Approve</string>
   <string name="chat_message_tool_ask_questions">Ask %d questions</string>
@@ -2059,6 +2060,7 @@
   <string name="harness_warning_message">Custom limits change how the agent loop behaves. Too small a step limit can cut off tool tasks; too large a tool output can overflow the context. Only continue if you understand the trade-offs.</string>
   <string name="harness_warning_wait">Please wait %1$d s</string>
   <string name="chat_drawer_temporary">Temporary chat</string>
+  <string name="chat_drawer_temporary_desc">Not saved to history; discarded when closed</string>
   <string name="desktop_floating_chat">Chat</string>
   <string name="desktop_floating_pin">Pin panel</string>
   <string name="desktop_floating_unpin">Unpin panel</string>

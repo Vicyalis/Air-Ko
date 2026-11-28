@@ -254,6 +254,7 @@
   <string name="chat_input_file_read_failed">文件读取失败：%s</string>
   <string name="chat_message_add_favorite">添加收藏</string>
   <string name="chat_message_quote">引用</string>
+  <string name="chat_message_quote_and_ask">引用并追问</string>
   <string name="chat_message_remove_favorite">取消收藏</string>
   <string name="chat_message_tool_approve">批准</string>
   <string name="chat_message_tool_ask_questions">询问 %d 个问题</string>
@@ -2061,6 +2062,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="harness_warning_message">自定义参数会改变 Agent 循环的行为：步数太小可能截断工具任务，工具输出上限太大可能撑爆上下文。确认你理解这些取舍后再继续。</string>
   <string name="harness_warning_wait">请等待 %1$d 秒</string>
   <string name="chat_drawer_temporary">临时对话</string>
+  <string name="chat_drawer_temporary_desc">不写入历史，关闭后不再保留</string>
   <string name="desktop_floating_chat">对话</string>
   <string name="desktop_floating_pin">固定面板</string>
   <string name="desktop_floating_unpin">取消固定</string>
