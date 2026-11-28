@@ -35,7 +35,9 @@ class WorkspaceCompletionProvider(
                 val path = entry.workspacePath()
                 ChatCompletionItem(
                     label = path,
-                    insertText = if (entry.isDirectory) "@$path/" else "@$path ",
+                    // 插入成绝对路径而不是 "@/workspace/..."：workspace 工具要求路径以 / 开头，
+                    // 多一个 @ 会让模型把路径当成普通文本，和系统提示里的约定冲突
+                    insertText = if (entry.isDirectory) "$path/" else "$path ",
                     icon = if (entry.isDirectory) HugeIcons.Folder01 else HugeIcons.File02,
                     sortScore = score,
                 )

@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -59,6 +60,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.onFocusChanged
@@ -134,6 +137,7 @@ fun ChatInput(
     hazeState: HazeState,
     onUpdateSearchMode: (SearchMode) -> Unit,
     modifier: Modifier = Modifier,
+    inputFocusRequester: FocusRequester? = null,
     completionProviders: List<ChatCompletionProvider> = emptyList(),
     onUpdateChatModel: (Model) -> Unit,
     onUpdateAssistant: (Assistant) -> Unit,
@@ -280,6 +284,7 @@ fun ChatInput(
                         assistant = assistant,
                         completionProviders = completionProviders,
                         onSendMessage = { sendMessage() },
+                        inputFocusRequester = inputFocusRequester,
                     )
 
                     Row(
@@ -473,6 +478,7 @@ private fun TextInputRow(
     assistant: Assistant,
     completionProviders: List<ChatCompletionProvider>,
     onSendMessage: () -> Unit,
+    inputFocusRequester: FocusRequester? = null,
 ) {
     val settings = LocalSettings.current
     val filesManager: FilesManager = koinInject()
@@ -574,16 +580,26 @@ private fun TextInputRow(
                 }
                 val primary = lists.firstOrNull()
                 completionList = primary?.let { list ->
-                    val mergedItems = lists
-                        .filter { it.replacementRange == list.replacementRange }
-                        .flatMap { it.items }
-                        .distinctBy { it.label to it.insertText }
-                        .sortedWith(
-                            compareByDescending<ChatCompletionItem> { it.sortScore }
-                                .thenBy { it.label.length }
-                                .thenBy { it.label.lowercase() }
-                        )
-                        .take(8)
+                    // 分组轮转而不是按分数混排：工作区文件的分数量级（500~2500）远大于
+                    // 技能/快捷消息（10~30），混排后 take(8) 会把另一类完全挤掉。
+                    // 轮转保证每个来源至少露出前几项，用户再输入即可继续过滤。
+                    val compatible = lists.filter { it.replacementRange == list.replacementRange }
+                    val mergedItems = buildList {
+                        val seen = HashSet<String>(16)
+                        var cursor = 0
+                        while (size < MAX_COMPLETION_ITEMS &&
+                            compatible.any { cursor < it.items.size }
+                        ) {
+                            compatible.forEach { candidate ->
+                                val item = candidate.items.getOrNull(cursor) ?: return@forEach
+                                val key = item.label + "\u0000" + item.insertText
+                                if (size < MAX_COMPLETION_ITEMS && seen.add(key)) {
+                                    add(item)
+                                }
+                            }
+                            cursor++
+                        }
+                    }
                     list.copy(items = mergedItems)
                 }
             }
@@ -607,6 +623,7 @@ private fun TextInputRow(
                 .fillMaxWidth()
                 .testTag("chat_input")
                 .contentReceiver(receiveContentListener)
+                .then(if (inputFocusRequester != null) Modifier.focusRequester(inputFocusRequester) else Modifier)
                 .onFocusChanged {
                     isFocused = it.isFocused
                 }
@@ -627,12 +644,26 @@ private fun TextInputRow(
                                 true
                             }
 
-                            Key.Enter, Key.NumPadEnter -> {
-                                val item = list.items[completionSelection.coerceIn(0, list.items.lastIndex)]
-                                state.applyCompletion(list.replacementRange, item)
-                                item.onSelected?.invoke()
+                            Key.Escape -> {
                                 completionList = null
                                 true
+                            }
+
+                            Key.Enter, Key.NumPadEnter -> {
+                                // 只敲了一个触发符时，回车仍然是发送；不要把 "/" 变成命令选中
+                                if (state.textContent.text.toString().trim() in BARE_COMPLETION_TRIGGERS) {
+                                    completionList = null
+                                    if (settings.displaySetting.sendOnEnter && !state.isEmpty()) {
+                                        onSendMessage()
+                                    }
+                                    true
+                                } else {
+                                    val item = list.items[completionSelection.coerceIn(0, list.items.lastIndex)]
+                                    state.applyCompletion(list.replacementRange, item)
+                                    item.onSelected?.invoke()
+                                    completionList = null
+                                    true
+                                }
                             }
 
                             else -> false
@@ -650,12 +681,14 @@ private fun TextInputRow(
             ),
             onKeyboardAction = {
                 val list = completionList
-                if (list != null && list.items.isNotEmpty()) {
+                val bareTrigger = state.textContent.text.toString().trim() in BARE_COMPLETION_TRIGGERS
+                if (list != null && list.items.isNotEmpty() && !bareTrigger) {
                     val item = list.items[completionSelection.coerceIn(0, list.items.lastIndex)]
                     state.applyCompletion(list.replacementRange, item)
                     item.onSelected?.invoke()
                     completionList = null
                 } else if (settings.displaySetting.sendOnEnter && !state.isEmpty()) {
+                    completionList = null
                     onSendMessage()
                 }
             },
@@ -694,12 +727,21 @@ private fun TextInputRow(
     }
 }
 
+private const val MAX_COMPLETION_ITEMS = 8
+private val BARE_COMPLETION_TRIGGERS = setOf("/", "@")
+
 @Composable
 private fun CompletionPopup(
     completionList: ChatCompletionList,
     selectedIndex: Int,
     onItemClick: (ChatCompletionItem) -> Unit,
 ) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(selectedIndex) {
+        if (selectedIndex in completionList.items.indices) {
+            listState.animateScrollToItem(selectedIndex)
+        }
+    }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -710,6 +752,7 @@ private fun CompletionPopup(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp),
@@ -759,6 +802,14 @@ private fun CompletionPopup(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
+                        }
+                        if (index == selectedIndex) {
+                            // 提示回车即可选中当前行
+                            Text(
+                                text = "↵",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
                         }
                     }
                 }
