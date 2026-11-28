@@ -633,7 +633,7 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.WorkspaceTerminal> { key ->
-                                WorkspaceTerminalPage(key.id)
+                                WorkspaceTerminalPage(key.id, key.conversationId)
                             }
 
                             entry<Screen.WorkspaceFileEditor> { key ->
@@ -894,7 +894,7 @@ sealed interface Screen : NavKey {
     data class WorkspaceDesktop(val id: String, val conversationId: String = "") : Screen
 
     @Serializable
-    data class WorkspaceTerminal(val id: String) : Screen
+    data class WorkspaceTerminal(val id: String, val conversationId: String = "") : Screen
 
     @Serializable
     data class WorkspaceFileEditor(val id: String, val area: String, val path: String) : Screen

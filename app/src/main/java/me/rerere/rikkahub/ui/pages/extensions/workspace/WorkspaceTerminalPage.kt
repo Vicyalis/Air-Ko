@@ -1,10 +1,17 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
 import android.graphics.Typeface
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +20,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -58,9 +66,13 @@ import com.termux.terminal.TerminalSession
 import com.termux.view.TerminalView
 import kotlinx.coroutines.flow.flowOf
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ComputerDesk01
+import me.rerere.hugeicons.stroke.MessageAdd01
 import me.rerere.hugeicons.stroke.Sparkles
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.theme.ColorMode
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
@@ -69,7 +81,7 @@ import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 
 @Composable
-fun WorkspaceTerminalPage(id: String) {
+fun WorkspaceTerminalPage(id: String, conversationId: String = "") {
     val vm: WorkspaceDetailVM = koinViewModel(parameters = { parametersOf(id) })
     val state by vm.state.collectAsStateWithLifecycle()
     val sessionManager: WorkspaceTerminalSessionManager = koinInject()
@@ -81,6 +93,11 @@ fun WorkspaceTerminalPage(id: String) {
         initialValue = WorkspaceTerminalTabsState(),
     )
     var pendingCloseTabId by remember(root) { mutableStateOf<Long?>(null) }
+    val navController = LocalNavController.current
+    // 下拉式悬浮对话：和桌面页里的那个是同一个组件、同一份会话
+    var chatVisible by remember(id) { mutableStateOf(false) }
+    var chatPinned by remember(id) { mutableStateOf(false) }
+    BackHandler(enabled = chatVisible) { chatVisible = false }
 
     val shellCompatibilityMode = state.workspace?.shellCompatibilityMode ?: false
     LaunchedEffect(root, shellCompatibilityMode) {
@@ -89,18 +106,55 @@ fun WorkspaceTerminalPage(id: String) {
 
     RikkahubTheme(colorMode = ColorMode.DARK) {
         Scaffold { innerPadding ->
-            WorkspaceTerminalContent(
-                root = root,
-                state = terminalState,
-                contentPadding = innerPadding,
-                onCreateTab = { root?.let { sessionManager.createTab(it, shellCompatibilityMode) } },
-                onSelectTab = { tabId ->
-                    root?.let { sessionManager.selectTab(it, tabId) }
-                },
-                onCloseTab = { tabId ->
-                    pendingCloseTabId = tabId
-                },
-            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                WorkspaceTerminalContent(
+                    root = root,
+                    state = terminalState,
+                    contentPadding = innerPadding,
+                    onCreateTab = { root?.let { sessionManager.createTab(it, shellCompatibilityMode) } },
+                    onSelectTab = { tabId ->
+                        root?.let { sessionManager.selectTab(it, tabId) }
+                    },
+                    onCloseTab = { tabId ->
+                        pendingCloseTabId = tabId
+                    },
+                    onOpenDesktop = {
+                        navController.navigate(Screen.WorkspaceDesktop(id, conversationId))
+                    },
+                    onToggleChat = { chatVisible = !chatVisible },
+                )
+
+                // 未 Pin 时点终端任意位置收起对话，和桌面页行为一致
+                if (chatVisible && !chatPinned) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { chatVisible = false }
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = chatVisible,
+                    enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(innerPadding),
+                ) {
+                    DesktopFloatingChatPanel(
+                        conversationId = conversationId,
+                        pinned = chatPinned,
+                        onPinnedChange = { chatPinned = it },
+                        onDismiss = { chatVisible = false },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight(0.62f),
+                    )
+                }
+            }
         }
 
         val pendingCloseTab = terminalState.tabs.firstOrNull { it.id == pendingCloseTabId }
@@ -147,6 +201,8 @@ private fun WorkspaceTerminalContent(
     onCreateTab: () -> Unit,
     onSelectTab: (Long) -> Unit,
     onCloseTab: (Long) -> Unit,
+    onOpenDesktop: () -> Unit,
+    onToggleChat: () -> Unit,
 ) {
     // 终端只展示用户自己的标签页；AI 的后台会话不出现在这里
     val tabs = state.tabs.filterNot { it.isAi }
@@ -249,6 +305,32 @@ private fun WorkspaceTerminalContent(
                         .semantics { contentDescription = newTabDescription },
                 ) {
                     Text(text = "+", fontSize = 24.sp)
+                }
+
+                val openDesktopDescription = stringResource(R.string.wp5_chat_open_desktop)
+                IconButton(
+                    onClick = onOpenDesktop,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .semantics { contentDescription = openDesktopDescription },
+                ) {
+                    Icon(
+                        imageVector = HugeIcons.ComputerDesk01,
+                        contentDescription = null,
+                    )
+                }
+
+                val chatDescription = stringResource(R.string.desktop_floating_chat)
+                IconButton(
+                    onClick = onToggleChat,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .semantics { contentDescription = chatDescription },
+                ) {
+                    Icon(
+                        imageVector = HugeIcons.MessageAdd01,
+                        contentDescription = null,
+                    )
                 }
             }
             if (selectedTab != null) {
