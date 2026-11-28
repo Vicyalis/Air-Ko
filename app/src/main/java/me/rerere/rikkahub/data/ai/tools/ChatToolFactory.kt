@@ -14,6 +14,7 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.data.ssh.SshManager
 import me.rerere.rikkahub.data.repository.memoryId
 import me.rerere.workspace.WorkspaceShellStatus
 
@@ -34,6 +35,7 @@ class ChatToolFactory(
     private val mcpManager: McpManager,
     private val skillManager: SkillManager,
     private val workspaceRepository: WorkspaceRepository,
+    private val sshManager: SshManager,
 ) {
     suspend fun createTools(
         settings: Settings,
@@ -65,6 +67,13 @@ class ChatToolFactory(
                 workspace = workspace,
                 cwd = workspaceCwd,
                 autoApprove = assistant.localToolsAutoApprove,
+            )
+        )
+        // 远程 SSH 主机：配了才暴露工具，避免空工具占 prompt
+        addAll(
+            createSshTools(
+                hosts = settings.sshHosts,
+                sshManager = sshManager,
             )
         )
         if (assistant.enabledSkills.isNotEmpty()) {

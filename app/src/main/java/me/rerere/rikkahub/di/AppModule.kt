@@ -5,6 +5,8 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
 import me.rerere.rikkahub.data.event.AppEventBus
+import me.rerere.rikkahub.data.security.SshSecretStore
+import me.rerere.rikkahub.data.ssh.SshManager
 import me.rerere.rikkahub.data.sync.terminal.TerminalRestoreManager
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
@@ -90,6 +92,10 @@ val appModule = module {
         )
     }
 
+    single { SshSecretStore(get()) }
+
+    single { SshManager(context = get(), secretStore = get()) }
+
     single {
         ChatToolFactory(
             memoryRepository = get(),
@@ -98,6 +104,7 @@ val appModule = module {
             mcpManager = get(),
             skillManager = get(),
             workspaceRepository = get(),
+            sshManager = get(),
         )
     }
 

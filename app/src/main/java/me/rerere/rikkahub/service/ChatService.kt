@@ -54,6 +54,7 @@ import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
 import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
 import me.rerere.rikkahub.data.ai.transformers.PlaceholderTransformer
+import me.rerere.rikkahub.data.ai.transformers.SshReminderTransformer
 import me.rerere.rikkahub.data.ai.transformers.PromptInjectionTransformer
 import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
@@ -202,6 +203,8 @@ class ChatService(
 ) {
     // workspace 系统提示注入 (依赖 workspaceRepository, 故在类内构造)
     private val workspaceReminderTransformer = WorkspaceReminderTransformer(workspaceRepository)
+    // SSH 远程主机列表注入（只在配置了主机时生效）
+    private val sshReminderTransformer = SshReminderTransformer(settingsStore)
 
     private val sessionManager = ConversationSessionManager(
         scope = appScope,
@@ -719,6 +722,7 @@ class ChatService(
                     addAll(inputTransformers)
                     add(templateTransformer)
                     add(workspaceReminderTransformer)
+                    add(sshReminderTransformer)
                 },
                 outputTransformers = outputTransformers,
                 tools = tools,
