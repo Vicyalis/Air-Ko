@@ -14,6 +14,7 @@ import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.PriceOverride
 import me.rerere.rikkahub.data.model.PromptInjection
 import me.rerere.rikkahub.data.model.QuickMessage
+import me.rerere.rikkahub.data.model.SshHost
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.sync.s3.S3Config
 import me.rerere.rikkahub.ui.theme.CustomTheme
@@ -147,6 +148,16 @@ private val SAMPLE = Settings(
     searchCommonOptions = SearchCommonOptions(resultSize = 3),
     searchServiceSelected = 1,
     mcpServers = listOf(McpServerConfig.SseTransportServer(id = id(8), url = "https://example.com/sse")),
+    sshHosts = listOf(
+        SshHost(
+            id = "ssh-1",
+            name = "box",
+            host = "example.com",
+            user = "me",
+            hostKeyType = "ssh-ed25519",
+            hostKeyFingerprint = "SHA256:abc",
+        ),
+    ),
     webDavConfig = WebDavConfig(url = "https://dav.example.com"),
     s3Config = S3Config(bucket = "backup"),
     uploadS3Config = S3Config(bucket = "upload"),
@@ -211,6 +222,7 @@ private val STORED_KEYS = setOf(
     "search_common",
     "search_selected",
     "mcp_servers",
+    "ssh_hosts",
     "webdav_config",
     "s3_config",
     "upload_s3_config",

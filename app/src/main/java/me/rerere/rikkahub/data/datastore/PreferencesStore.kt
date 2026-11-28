@@ -140,6 +140,7 @@ class SettingsStore internal constructor(
 
         // MCP
         val MCP_SERVERS = stringPreferencesKey("mcp_servers")
+    val SSH_HOSTS = stringPreferencesKey("ssh_hosts")
 
         // WebDAV
         val WEBDAV_CONFIG = stringPreferencesKey("webdav_config")

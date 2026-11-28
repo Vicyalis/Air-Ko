@@ -139,6 +139,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingMcpDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
 import me.rerere.rikkahub.ui.pages.setting.SettingModelPage
 import me.rerere.rikkahub.ui.pages.setting.HarnessSettingPage
+import me.rerere.rikkahub.ui.pages.setting.SshHostsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderPage
@@ -551,6 +552,10 @@ class RouteActivity : ComponentActivity() {
                                 HarnessSettingPage()
                             }
 
+                            entry<Screen.SshHosts> {
+                                SshHostsPage()
+                            }
+
                             entry<Screen.SettingSearch> {
                                 SettingSearchPage()
                             }
@@ -829,6 +834,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Harness : Screen
+
+    @Serializable
+    data object SshHosts : Screen
 
     @Serializable
     data object ModelPricing : Screen
