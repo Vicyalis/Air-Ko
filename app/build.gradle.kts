@@ -24,8 +24,8 @@ android {
         applicationId = "com.airko.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 7
-        versionName = "0.0.7"
+        versionCode = 8
+        versionName = "0.0.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -245,6 +245,8 @@ dependencies {
 
     // Shizuku：把命令交给 shell(ADB)/root 身份执行（device_shell 等工具）
     implementation(libs.shizuku.api)
+    // SSH 远程主机 / 远程工作区
+    implementation(libs.jsch)
     implementation(libs.shizuku.provider)
     implementation(libs.androidx.camera.core)
 

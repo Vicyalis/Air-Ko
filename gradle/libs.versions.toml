@@ -3,6 +3,7 @@ agp = "9.4.0"
 barcodeScanning = "17.3.0"
 mlkitTextRecognitionChinese = "16.0.1"
 shizuku = "13.1.5"
+jsch = "0.2.20"
 cameraCore = "1.6.2"
 jlatexmath = "1.5"
 kotlin = "2.4.20"
@@ -86,6 +87,7 @@ barcode-scanning = { module = "com.google.mlkit:barcode-scanning", version.ref =
 mlkit-text-recognition-chinese = { module = "com.google.mlkit:text-recognition-chinese", version.ref = "mlkitTextRecognitionChinese" }
 shizuku-api = { module = "dev.rikka.shizuku:api", version.ref = "shizuku" }
 shizuku-provider = { module = "dev.rikka.shizuku:provider", version.ref = "shizuku" }
+jsch = { module = "com.github.mwiede:jsch", version.ref = "jsch" }
 jlatexmath = { module = "com.github.rikkahub.jlatexmath-android:jlatexmath", version.ref = "jlatexmath" }
 jlatexmath-font-greek = { module = "com.github.rikkahub.jlatexmath-android:jlatexmath-font-greek", version.ref = "jlatexmath" }
 jlatexmath-font-cyrillic = { module = "com.github.rikkahub.jlatexmath-android:jlatexmath-font-cyrillic", version.ref = "jlatexmath" }
