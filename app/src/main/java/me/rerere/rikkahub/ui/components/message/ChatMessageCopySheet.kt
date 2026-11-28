@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.contextmenu.builder.item
+import androidx.compose.foundation.text.contextmenu.modifier.appendTextContextMenuComponents
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -20,12 +22,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -151,33 +151,35 @@ fun ChatMessageCopySheet(
                     )
                 }
             } else if (onQuote != null) {
-                // 只读 TextField 能直接读出选区，不需要经过剪贴板
-                val quoteToolbar = remember(textState, onQuote) {
-                    QuoteTextToolbar(
-                        context = context,
-                        selectionText = {
+                // Compose 1.13 的选择菜单走新的 TextContextMenu；用 appendTextContextMenuComponents
+                // 直接把「引用并追问」加进系统菜单（旧的 LocalTextToolbar 已不生效）。
+                val quoteLabel = stringResource(R.string.chat_message_quote_and_ask)
+                val quoteItemModifier = remember(textState, onQuote, quoteLabel, fullText) {
+                    Modifier.appendTextContextMenuComponents {
+                        item(key = "airko_quote_and_ask", label = quoteLabel) {
                             val selection = textState.selection
-                            if (selection.collapsed) {
-                                null
-                            } else {
+                            val selected = if (!selection.collapsed) {
                                 textState.text.subSequence(selection.min, selection.max).toString()
+                            } else {
+                                fullText
                             }
-                        },
-                        onQuote = onQuote,
-                    )
+                            close()
+                            onQuote(selected)
+                            onDismissRequest()
+                        }
+                    }
                 }
-                CompositionLocalProvider(LocalTextToolbar provides quoteToolbar) {
-                    BasicTextField(
-                        state = textState,
-                        readOnly = true,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurface,
-                        ),
-                    )
-                }
+                BasicTextField(
+                    state = textState,
+                    readOnly = true,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .then(quoteItemModifier),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                )
             } else {
                 BasicTextField(
                     state = textState,

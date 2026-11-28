@@ -17,7 +17,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.contextmenu.builder.item
+import androidx.compose.foundation.text.contextmenu.modifier.appendTextContextMenuComponents
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.rememberSelectionState
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -26,7 +29,6 @@ import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -41,7 +43,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -297,8 +298,23 @@ private fun MessagePartsBlock(
     onQuoteText: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
-    val quoteToolbar = remember(context, onQuoteText) {
-        onQuoteText?.let { QuoteTextToolbar(context = context, onQuote = it) }
+    // 消息正文的文本选择也迁移到新的 TextContextMenu：用 SelectionState 直接读选中文字
+    // （TextContextMenuSession 本身不暴露文字）。
+    val quoteLabel = stringResource(R.string.chat_message_quote_and_ask)
+    val selectionState = rememberSelectionState()
+    val quoteMenuModifier = remember(selectionState, onQuoteText, quoteLabel) {
+        val onQuote = onQuoteText
+        if (onQuote == null) {
+            Modifier
+        } else {
+            Modifier.appendTextContextMenuComponents {
+                item(key = "airko_quote_and_ask", label = quoteLabel) {
+                    val quoted = selectionState.selectedTexts.joinToString("\n") { it.text }
+                    close()
+                    if (quoted.isNotBlank()) onQuote(quoted)
+                }
+            }
+        }
     }
     // 流式期间每个 chunk 都触发布局动画既贵又抖；生成结束后再启用
     val contentSizeAnimation = if (loading) Modifier else Modifier.animateContentSize()
@@ -450,12 +466,12 @@ private fun MessagePartsBlock(
                         // 生成结束后内容稳定，再启用文本选择。
                         if (loading) {
                             textContent()
-                        } else if (quoteToolbar != null) {
-                            // 用自定义 TextToolbar 给系统选择菜单加一条「引用并追问」
-                            CompositionLocalProvider(LocalTextToolbar provides quoteToolbar) {
-                                SelectionContainer {
-                                    textContent()
-                                }
+                        } else if (onQuoteText != null) {
+                            SelectionContainer(
+                                state = selectionState,
+                                modifier = quoteMenuModifier,
+                            ) {
+                                textContent()
                             }
                         } else {
                             SelectionContainer {
