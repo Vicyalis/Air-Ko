@@ -10,10 +10,8 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.utils.JsonInstantPretty
-import me.rerere.rikkahub.utils.toLocalString
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
-import java.time.LocalDate
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
@@ -31,7 +29,7 @@ fun createSearchTools(settings: Settings): Set<Tool> {
                     If a date or primary source is missing, or sources conflict, run another focused search
                     or use scrape_web to verify the most relevant source before answering.
                     Generate focused keywords and run multiple searches if needed.
-                    Today is ${LocalDate.now().toLocalString(true)}.
+                    Use retrievedAt from each result as today's date; do not guess it.
 
                     Response format:
                     - retrievedAt is the local retrieval time, never a publication date

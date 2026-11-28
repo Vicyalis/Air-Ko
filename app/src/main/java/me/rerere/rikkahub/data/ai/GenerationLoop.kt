@@ -26,6 +26,7 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.util.HttpStatusException
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.StreamChunkHandler
 import me.rerere.ai.ui.handleTextGenerationResult
@@ -56,12 +57,30 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "GenerationHandler"
 private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
+
+/**
+ * 工具失败时只把异常类型、消息和前三帧写回模型。
+ *
+ * 之前把完整 stackTraceToString() 塞进工具结果，一次失败就能带进几千 token 的
+ * 上下文（下一轮还会重复发送），既贵又容易触发上下文压缩。
+ */
+private const val MAX_TOOL_ERROR_CHARS = 1_200
+
+private fun Throwable.toToolErrorText(): String {
+    val frames = stackTrace.take(3).joinToString("\n") { "  at $it" }
+    val head = "[$javaClass.name] $message"
+    return (if (frames.isBlank()) head else "$head\n$frames").take(MAX_TOOL_ERROR_CHARS)
+}
 private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
 
 // 搜索结果的体积由用户设置的结果数决定，且结果列表 UI 与引用跳转都依赖完整的 JSON 结构，不参与截断
 private val TOOLS_WITHOUT_OUTPUT_TRUNCATION = setOf("search_web")
 private const val MAX_PROVIDER_NETWORK_RETRIES = 3
 private const val INITIAL_PROVIDER_RETRY_DELAY_MS = 1_000L
+private const val MAX_PROVIDER_RETRY_DELAY_MS = 30_000L
+
+/** 429/5xx 属于可重试的服务端失败；408/409/425 也常见于网关与并发冲突。 */
+private val RETRYABLE_HTTP_CODES = setOf(408, 409, 425, 429, 500, 502, 503, 504, 529)
 
 private class StreamChunkHandlingException(cause: Throwable) : RuntimeException(cause)
 
@@ -321,10 +340,7 @@ class GenerationLoop(
                                             buildJsonObject {
                                                 put(
                                                     "error",
-                                                    JsonPrimitive(buildString {
-                                                        append("[${it.javaClass.name}] ${it.message}")
-                                                        append("\n${it.stackTraceToString()}")
-                                                    })
+                                                    JsonPrimitive(it.toToolErrorText())
                                                 )
                                             }
                                         )
@@ -466,6 +482,8 @@ class GenerationLoop(
                 while (true) {
                     val streamChunkHandler = StreamChunkHandler(model)
                     var attemptMessages = responseBaseMessages
+                    // 已经开始产出 token 就不能重放：再请求一次会让用户看到内容回退，也会重复计费
+                    var receivedChunk = false
                     try {
                         providerImpl.streamText(
                             providerSetting = provider,
@@ -473,6 +491,7 @@ class GenerationLoop(
                             params = params
                         ).collect { chunk ->
                             try {
+                                receivedChunk = true
                                 if (retryCount > 0) {
                                     processingStatus.value = null
                                 }
@@ -497,6 +516,7 @@ class GenerationLoop(
                             processingStatus = processingStatus,
                             enabled = settings.networkSetting.enableAutoRetry,
                             maxRetries = retryLimit,
+                            allowRetry = { !receivedChunk },
                         )
                     }
                 }
@@ -548,16 +568,21 @@ class GenerationLoop(
         processingStatus: MutableStateFlow<String?>,
         enabled: Boolean,
         maxRetries: Int = MAX_PROVIDER_NETWORK_RETRIES,
+        allowRetry: () -> Boolean = { true },
     ): Int {
         // 用户主动停止生成时，底层连接也可能以 IOException("canceled") 收尾；
         // 先检查协程状态，确保取消不会被当作网络波动重新拉起。
         currentCoroutineContext().ensureActive()
-        if (!enabled || error !is IOException || retryCount >= maxRetries) {
+        val retryableHttp = error is HttpStatusException && error.code in RETRYABLE_HTTP_CODES
+        if (!enabled || (error !is IOException && !retryableHttp) || retryCount >= maxRetries || !allowRetry()) {
             throw error
         }
 
         val nextRetryCount = retryCount + 1
-        val retryDelay = INITIAL_PROVIDER_RETRY_DELAY_MS shl retryCount
+        // 指数退避 + 抖动，避免多个并发会话在同一秒一起重试
+        val baseDelay = (INITIAL_PROVIDER_RETRY_DELAY_MS shl retryCount)
+            .coerceAtMost(MAX_PROVIDER_RETRY_DELAY_MS)
+        val retryDelay = baseDelay + kotlin.random.Random.nextLong(0L, 250L)
         processingStatus.value = context.getString(
             R.string.chat_generation_network_retrying,
             getNetworkErrorMessage(error),
@@ -574,7 +599,7 @@ class GenerationLoop(
         return nextRetryCount
     }
 
-    private fun getNetworkErrorMessage(error: IOException): String {
+    private fun getNetworkErrorMessage(error: Throwable): String {
         val messageRes = when (error) {
             is UnknownHostException -> R.string.chat_generation_network_unknown_host
             is SocketTimeoutException -> R.string.chat_generation_network_timeout
@@ -602,7 +627,14 @@ class GenerationLoop(
         Log.i(TAG, "maybeTruncateToolOutput: truncating tool $toolCallId output ($totalChars chars)")
 
         val fullText = textParts.joinToString("\n") { it.text }
-        val preview = fullText.take(TOOL_OUTPUT_PREVIEW_CHARS)
+        // 头 + 尾：只留头部会把命令末尾的报错/退出信息切掉，模型容易误判成功
+        val headChars = TOOL_OUTPUT_PREVIEW_CHARS * 3 / 4
+        val tailChars = TOOL_OUTPUT_PREVIEW_CHARS - headChars
+        val preview = buildString {
+            append(fullText.take(headChars))
+            append("\n… (truncated) …\n")
+            append(fullText.takeLast(tailChars))
+        }
 
         val fileName = "${toolCallId}.txt"
         val outputDir = File(context.filesDir, FileFolders.TOOL_OUTPUTS).apply { mkdirs() }

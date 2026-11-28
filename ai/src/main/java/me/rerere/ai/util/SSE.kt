@@ -1,5 +1,7 @@
 package me.rerere.ai.util
 
+import me.rerere.ai.util.HttpStatusException
+
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Request
@@ -39,7 +41,14 @@ class SSEEventSource(
     fun processResponse(response: Response) {
         response.use {
             if (!response.isSuccessful) {
-                listener.onFailure(this, null, response)
+                listener.onFailure(
+                    this,
+                    HttpStatusException(
+                        response.code,
+                        "Failed to get response: ${response.code} ${response.body?.string()}",
+                    ),
+                    response,
+                )
                 return
             }
 

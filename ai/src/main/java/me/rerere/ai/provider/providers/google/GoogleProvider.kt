@@ -1,5 +1,6 @@
 package me.rerere.ai.provider.providers.google
 
+import me.rerere.ai.util.HttpStatusException
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -202,7 +203,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
 
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
+            throw HttpStatusException(response.code, "Failed to get response: ${response.code} ${response.body?.string()}")
         }
 
         val bodyStr = response.body?.string() ?: ""
