@@ -20,6 +20,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -114,10 +115,20 @@ fun ErrorCard(
     val checkFastModelSettings = stringResource(R.string.chat_page_check_fast_model_settings)
     val linkColor = MaterialTheme.colorScheme.primary
 
-    // 5 秒后自动消失
+    // 带堆栈时给用户留出看清/复制的时间
     LaunchedEffect(error.id) {
-        delay(5000)
+        delay(15000)
         onDismiss()
+    }
+
+    // 只显示最上面的两帧，足够定位到具体文件/行号；完整堆栈在复制按钮里
+    val stackFrames = remember(error.id) {
+        error.error.stackTraceToString()
+            .lineSequence()
+            .drop(1)
+            .take(2)
+            .joinToString("\n")
+            .trim()
     }
 
     Surface(
@@ -147,9 +158,16 @@ fun ErrorCard(
                     )
                 }
                 Text(
-                    text = error.error.message ?: "Unknown error",
+                    text = buildString {
+                        append(error.error.message ?: error.error::class.java.simpleName)
+                        if (stackFrames.isNotBlank()) {
+                            append('\n')
+                            append(stackFrames)
+                        }
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                    maxLines = 4,
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (error.solution == ChatErrorSolution.CheckFastModelSettings) {
@@ -183,7 +201,10 @@ fun ErrorCard(
                     scope.launch {
                         clipboard.setClipEntry(
                             ClipEntry(
-                                clipData = ClipData.newPlainText("Error", error.error.message ?: "Unknown error")
+                                clipData = ClipData.newPlainText(
+                                    "Error",
+                                    error.error.stackTraceToString()
+                                )
                             )
                         )
                     }

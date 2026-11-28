@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.data.ai.transformers
 
 import android.content.Context
+import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
@@ -76,7 +78,15 @@ suspend fun List<UIMessage>.transforms(
         workspaceCwd = workspaceCwd,
     )
     return transformers.fold(this) { acc, transformer ->
-        transformer.transform(ctx, acc)
+        // 单个 transformer 出错不应该让整轮生成失败：记录后按原消息继续，
+        // 发送失败的错误卡片对用户毫无意义，只会丢掉已经生成好的回复。
+        try {
+            transformer.transform(ctx, acc)
+        } catch (t: Throwable) {
+            if (t is CancellationException) throw t
+            Log.e("Transformer", "${transformer::class.java.simpleName}.transform failed", t)
+            acc
+        }
     }
 }
 
@@ -90,7 +100,13 @@ suspend fun List<UIMessage>.visualTransforms(
     val ctx = TransformerContext(context, model, assistant, settings)
     return transformers.fold(this) { acc, transformer ->
         if (transformer is OutputMessageTransformer) {
-            transformer.visualTransform(ctx, acc)
+            try {
+                transformer.visualTransform(ctx, acc)
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                Log.e("Transformer", "${transformer::class.java.simpleName}.visualTransform failed", t)
+                acc
+            }
         } else {
             acc
         }
@@ -139,7 +155,13 @@ suspend fun List<UIMessage>.onGenerationFinish(
     val ctx = TransformerContext(context, model, assistant, settings)
     return transformers.fold(this) { acc, transformer ->
         if (transformer is OutputMessageTransformer) {
-            transformer.onGenerationFinish(ctx, acc)
+            try {
+                transformer.onGenerationFinish(ctx, acc)
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                Log.e("Transformer", "${transformer::class.java.simpleName}.onGenerationFinish failed", t)
+                acc
+            }
         } else {
             acc
         }

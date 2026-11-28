@@ -728,8 +728,15 @@ class ChatService(
                 .conflate()
                 .onCompletion {
                 // 可能被取消了，或者意外结束，兜底更新
-                val updatedConversation = session.finishGeneration { conversation ->
-                    saveConversation(conversationId, conversation)
+                val updatedConversation = try {
+                    session.finishGeneration { conversation ->
+                        saveConversation(conversationId, conversation)
+                    }
+                } catch (t: Throwable) {
+                    if (t is CancellationException) throw t
+                    // 落库失败不该把已经生成好的回复变成一张错误卡片；内存态仍然可用
+                    Log.e(TAG, "finishGeneration failed", t)
+                    session.state.value
                 }
 
                 // 生成结束：取消 Live Update 通知，后台时发送完成通知

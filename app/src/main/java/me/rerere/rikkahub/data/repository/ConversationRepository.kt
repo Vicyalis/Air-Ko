@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.repository
 
 import android.database.sqlite.SQLiteBlobTooBigException
+import android.util.Log
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
@@ -334,7 +335,7 @@ class ConversationRepository(
             savedNodeMessages[conversation.id.toString()] =
                 conversation.messageNodes.associate { it.id.toString() to it.messages }
         }
-        messageFtsManager.indexConversation(conversation)
+        indexSafely(conversation)
     }
 
     suspend fun updateConversation(conversation: Conversation) {
@@ -344,7 +345,17 @@ class ConversationRepository(
             )
             syncMessageNodes(conversation)
         }
-        messageFtsManager.indexConversation(conversation)
+        indexSafely(conversation)
+    }
+
+    /** 全文检索索引只服务于搜索；索引失败不该让整轮生成/保存失败。 */
+    private suspend fun indexSafely(conversation: Conversation) {
+        try {
+            messageFtsManager.indexConversation(conversation)
+        } catch (t: Throwable) {
+            if (t is CancellationException) throw t
+            Log.e("ConversationRepository", "FTS index failed for ${conversation.id}", t)
+        }
     }
 
     suspend fun deleteConversation(conversation: Conversation) {
