@@ -137,10 +137,13 @@ suspend fun List<UIMessage>.visualTransformsIncremental(
             return visualTransforms(transformers, context, model, assistant, settings)
         }
     }
-    val lastVisual = subList(lastIndex, size)
+    // 注意：不能把 lastIndex 写在 buildList {} 里 —— 那里的隐式接收者是新建的
+    // MutableList，lastIndex 会解析成 -1，导致 previous.subList(0, -1) 崩溃。
+    val splitIndex = lastIndex
+    val lastVisual = subList(splitIndex, size)
         .visualTransforms(transformers, context, model, assistant, settings)
     return buildList(size) {
-        addAll(previous.subList(0, lastIndex))
+        addAll(previous.subList(0, splitIndex))
         addAll(lastVisual)
     }
 }
