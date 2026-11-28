@@ -2152,4 +2152,6 @@
   <string name="ssh_host_forward_remote">Remote port (optional)</string>
   <string name="ssh_host_forward_hint">Forward a service listening on the remote 127.0.0.1 to the phone\'s 127.0.0.1. Example: remote Ollama/vLLM/DeepSeek on 127.0.0.1:8000, local 18080, remote 8000, then set the provider base URL to http://127.0.0.1:18080/v1.</string>
   <string name="ssh_host_tunnel_open">Open tunnel</string>
+  <string name="linux_storage_page_folder_hint_title">Shared folder</string>
+  <string name="linux_storage_page_folder_hint">This folder is mounted as /workspace inside the built-in Linux; files uploaded here are visible to the AI and terminal immediately.</string>
 </resources>

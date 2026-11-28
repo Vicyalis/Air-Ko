@@ -2154,4 +2154,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="ssh_host_forward_remote">远端端口（可选）</string>
   <string name="ssh_host_forward_hint">把远端 127.0.0.1 上的服务映射到手机 127.0.0.1。例：远端 Ollama/vLLM/DeepSeek 只监听 127.0.0.1:8000 时，本地填 18080、远端填 8000，然后在模型服务里填 http://127.0.0.1:18080/v1。</string>
   <string name="ssh_host_tunnel_open">打开隧道</string>
+  <string name="linux_storage_page_folder_hint_title">共享文件夹</string>
+  <string name="linux_storage_page_folder_hint">这个文件夹在内置 Linux 里挂载为 /workspace，上传的文件 AI 和终端立刻就能看到。</string>
 </resources>
