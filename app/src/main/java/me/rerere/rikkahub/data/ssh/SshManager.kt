@@ -74,6 +74,7 @@ class SshManager(
 
     suspend fun testConnection(host: SshHost, secret: SshSecretStoreData): SshTestResult =
         withContext(Dispatchers.IO) {
+            Log.i(TAG, "testConnection " + host.host + ":" + host.port + " user=" + host.user + " auth=" + host.auth)
             val repository = CapturingHostKeyRepository(pinnedFingerprint = null)
             try {
                 val session = openSession(host, secret, repository)
@@ -88,12 +89,14 @@ class SshManager(
                     hostKeyFingerprint = fingerprint,
                 )
             } catch (e: SshException) {
+                Log.e(TAG, "testConnection SshException", e)
                 SshTestResult(false, e.message ?: "SSH_FAILED")
-            } catch (e: Exception) {
+            } catch (t: Throwable) {
+                Log.e(TAG, "testConnection failed", t)
                 val key = repository.presentedKey
                 SshTestResult(
                     ok = false,
-                    message = e.message ?: e.javaClass.simpleName,
+                    message = t.message ?: t.javaClass.name,
                     hostKeyType = key?.let { typeOf(it) },
                     hostKeyFingerprint = key?.let { fingerprintOf(it) },
                 )

@@ -39,7 +39,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.Cancel01
@@ -265,6 +267,7 @@ private fun SshHostEditorDialog(
     }
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<SshTestResult?>(null) }
+    val scrollState = rememberScrollState()
 
     fun buildHost(): SshHost = (initial ?: SshHost()).copy(
         name = name.trim(),
@@ -301,7 +304,7 @@ private fun SshHostEditorDialog(
             Column(
                 modifier = Modifier
                     .heightIn(max = 520.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedTextField(
@@ -425,15 +428,23 @@ private fun SshHostEditorDialog(
                 enabled = canSave,
                 onClick = {
                     val secret = buildSecret().takeIf { it.isConfigured }
+                    val result = testResult
                     var host = buildHost()
+                    // 测试成功时把本次看到的指纹一起保存，否则“信任并保存”只会存成未信任
+                    if (result?.ok == true) {
+                        host = host.withKeyPinned(
+                            result.hostKeyType.orEmpty(),
+                            result.hostKeyFingerprint.orEmpty(),
+                        )
+                    }
                     // 换了地址/端口后旧指纹属于另一台机器，必须重新测试确认
                     if (initial != null &&
-                        testResult?.ok != true &&
+                        result?.ok != true &&
                         (host.host != initial.host || host.port != initial.port)
                     ) {
                         host = host.withoutPinnedKey()
                     }
-                    onSave(host, secret, testResult?.ok == true)
+                    onSave(host, secret, result?.ok == true)
                 },
             ) {
                 Text(
@@ -452,8 +463,24 @@ private fun SshHostEditorDialog(
                     onClick = {
                         scope.launch {
                             testing = true
-                            testResult = onTest(buildHost(), buildSecret())
-                            testing = false
+                            testResult = try {
+                                kotlinx.coroutines.withTimeout(25_000) {
+                                    onTest(buildHost(), buildSecret())
+                                }
+                            } catch (t: Throwable) {
+                                // 不能只 catch Exception：类加载错误等 Error 会让按钮永远卡在
+                                // 禁用状态、且没有任何提示。
+                                me.rerere.rikkahub.data.ssh.SshTestResult(
+                                    ok = false,
+                                    message = t.message ?: t.javaClass.name,
+                                )
+                            } finally {
+                                testing = false
+                            }
+                            // 结果在滚动区底部，测试完自动滚过去，避免“看不到成功/失败原因”
+                            withContext(Dispatchers.Main) {
+                                scrollState.animateScrollTo(scrollState.maxValue)
+                            }
                         }
                     },
                 ) {
