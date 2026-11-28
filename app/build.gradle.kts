@@ -24,8 +24,8 @@ android {
         applicationId = "com.airko.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 8
-        versionName = "0.0.8"
+        versionCode = 9
+        versionName = "0.0.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -73,9 +73,12 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            // 分发用 release：debug 包升级兼容 + debug 签名；带 baseline profile，
+            // 启动比 debug 变体快。R8 暂不开启，避免反射/序列化类被裁掉（后续单独验证）。
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".debug"
             optimization {
-                enable = true
+                enable = false
             }
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
