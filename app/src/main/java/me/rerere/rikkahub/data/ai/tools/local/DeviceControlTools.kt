@@ -1778,27 +1778,29 @@ internal class DeviceControlTools(
             } else if (!ShizukuSupport.info().ready) {
                 listOf(shizukuUnavailablePayload())
             } else {
-                val bytes = withContext(Dispatchers.IO) {
-                    runCatching { file.readBytes() }.getOrNull()
-                }
-                if (bytes == null) {
-                    listOf(UIMessagePart.Text(deviceErrorPayload("APK_READ_FAILED", "cannot read ${file.absolutePath}")))
-                } else {
-                    val remote = "/data/local/tmp/airko_install_${System.currentTimeMillis()}.apk"
-                    val push = ShizukuSupport.writeRemoteFile(remote, bytes)
-                    if (!push.ok) {
-                        listOf(UIMessagePart.Text(shizukuResultPayload(push)))
-                    } else {
-                        val flags = buildString {
-                            if (reinstall) append(" -r")
-                            if (grantAll) append(" -g")
-                        }
-                        val install = ShizukuSupport.exec(
-                            "pm install$flags \"$remote\" && rm -f \"$remote\"",
-                            240_000L,
-                        )
-                        listOf(UIMessagePart.Text(shizukuResultPayload(install)))
+                val remote = "/data/local/tmp/airko_install_${System.currentTimeMillis()}.apk"
+                val push = withContext(Dispatchers.IO) {
+                    runCatching {
+                        file.inputStream().use { ShizukuSupport.writeRemoteFile(remote, it) }
+                    }.getOrElse {
+                        ShizukuExecResult(false, -1, "", "", error = it.message ?: "APK_READ_FAILED")
                     }
+                }
+                if (!push.ok) {
+                    ShizukuSupport.deleteRemoteFile(remote)
+                    listOf(UIMessagePart.Text(shizukuResultPayload(push)))
+                } else {
+                    val flags = buildString {
+                        if (reinstall) append(" -r")
+                        if (grantAll) append(" -g")
+                    }
+                    val install = try {
+                        ShizukuSupport.exec("pm install$flags \"$remote\"", 240_000L)
+                    } finally {
+                        // 安装失败也要清理，避免 /data/local/tmp 越积越多
+                        ShizukuSupport.deleteRemoteFile(remote)
+                    }
+                    listOf(UIMessagePart.Text(shizukuResultPayload(install)))
                 }
             }
         },
@@ -1923,11 +1925,11 @@ internal class DeviceControlTools(
                 namespace !in setOf("system", "secure", "global") -> null
                 action == "list" -> "settings list $namespace"
                 action == "get" && key.isEmpty() -> null
-                action == "get" -> "settings get $namespace \"$key\""
+                action == "get" -> "settings get $namespace ${shellQuote(key)}"
                 action == "put" && (key.isEmpty() || value.isEmpty()) -> null
-                action == "put" -> "settings put $namespace \"$key\" \"$value\""
+                action == "put" -> "settings put $namespace ${shellQuote(key)} ${shellQuote(value)}"
                 action == "delete" && key.isEmpty() -> null
-                action == "delete" -> "settings delete $namespace \"$key\""
+                action == "delete" -> "settings delete $namespace ${shellQuote(key)}"
                 else -> null
             }
             if (command == null) {
@@ -2025,8 +2027,23 @@ internal class DeviceControlTools(
                 listOf(shizukuUnavailablePayload())
             } else {
                 val remote = "/data/local/tmp/airko_shot_${System.currentTimeMillis()}.png"
-                val command = "screencap -p \"$remote\" && base64 \"$remote\"; rm -f \"$remote\""
-                val result = ShizukuSupport.exec(command, 60_000L)
+                // 截图 PNG 的 base64 常有 1MB+，走 exec 的 stdout 会撞 binder 事务上限
+                // （或被 Shizuku 服务的输出上限截断），所以先落盘再分块读回。
+                val result = try {
+                    val capture = ShizukuSupport.exec("screencap -p \"$remote\"", 60_000L)
+                    if (!capture.ok) {
+                        capture
+                    } else {
+                        val bytes = ShizukuSupport.readRemoteFile(remote)
+                        if (bytes == null || bytes.isEmpty()) {
+                            capture.copy(ok = false, stderr = "screencap produced no readable file")
+                        } else {
+                            capture.copy(stdout = Base64.encodeToString(bytes, Base64.NO_WRAP))
+                        }
+                    }
+                } finally {
+                    ShizukuSupport.deleteRemoteFile(remote)
+                }
                 val base64 = result.stdout.filterNot { it.isWhitespace() }
                 if (!result.ok || base64.isEmpty()) {
                     listOf(UIMessagePart.Text(shizukuResultPayload(result)))
@@ -2262,6 +2279,9 @@ private fun deviceActionResult(ok: Boolean, message: String): String = buildJson
     put("ok", ok)
     put("message", message)
 }.toString()
+
+/** POSIX 单引号转义：值里的 $、反引号、双引号都不会再被 shell 解释。 */
+private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
 private fun deviceErrorPayload(error: String, hint: String): String = buildJsonObject {
     put("ok", false)

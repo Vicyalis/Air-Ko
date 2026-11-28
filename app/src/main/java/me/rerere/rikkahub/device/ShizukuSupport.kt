@@ -18,15 +18,18 @@ import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
 import android.util.Log
+import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.rikkahub.BuildConfig
 import rikka.shizuku.Shizuku
 
 /** Shizuku 可用状态。 */
@@ -59,6 +62,7 @@ data class ShizukuExecResult(
     val stdout: String,
     val stderr: String,
     val timedOut: Boolean = false,
+    val truncated: Boolean = false,
     val error: String? = null,
 ) {
     /** 给模型看的单段文本（截断由调用方处理）。 */
@@ -69,6 +73,7 @@ data class ShizukuExecResult(
         }
         append("exit=").append(exitCode)
         if (timedOut) append(" (timed out)")
+        if (truncated) append(" (output truncated)")
         if (stdout.isNotBlank()) append("\n--- stdout ---\n").append(stdout.trimEnd())
         if (stderr.isNotBlank()) append("\n--- stderr ---\n").append(stderr.trimEnd())
     }
@@ -77,29 +82,52 @@ data class ShizukuExecResult(
 object ShizukuSupport {
     const val PERMISSION_REQUEST_CODE = 4319
 
-    /** UserService 版本：服务类行为有变化时 +1，Shizuku 会重启旧实例。 */
-    private const val SHELL_SERVICE_VERSION = 1
     private const val TAG = "ShizukuSupport"
     private const val WRITE_CHUNK_BYTES = 256 * 1024
+    private const val READ_CHUNK_BYTES = 256 * 1024
+    private const val MAX_REMOTE_READ_BYTES = 32L * 1024 * 1024
 
     private var appContext: Context? = null
     private val lock = Any()
     private var bound = false
     private var shellService: IShizukuShellService? = null
+    private var deadListenerAdded = false
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             shellService = IShizukuShellService.Stub.asInterface(service)
+            // 连接后确认服务进程身份：2000 是 shell(ADB)，0 是 root；只打日志，不阻断
+            runCatching { Log.i(TAG, "shell service connected, uid=" + shellService?.uid) }
+                .onFailure { Log.w(TAG, "echo uid failed", it) }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            shellService = null
+            // 必须把 bound 复位，否则下次 awaitService 不会重新 bind，整个进程内永久不可用
+            synchronized(lock) {
+                shellService = null
+                bound = false
+            }
         }
     }
 
     /** 应用启动时调用一次（Application/RouteActivity 都行）。 */
     fun init(context: Context) {
         appContext = context.applicationContext
+        if (!deadListenerAdded) {
+            deadListenerAdded = true
+            runCatching {
+                Shizuku.addBinderDeadListener(object : Shizuku.OnBinderDeadListener {
+                    override fun onBinderDead() {
+                        // Shizuku 服务被停止/更新后，旧 UserService 已经不可用
+                        synchronized(lock) {
+                            shellService = null
+                            bound = false
+                        }
+                        Log.i(TAG, "Shizuku binder died, will rebind on next call")
+                    }
+                })
+            }.onFailure { Log.w(TAG, "addBinderDeadListener failed", it) }
+        }
     }
 
     fun info(): ShizukuInfo {
@@ -156,8 +184,20 @@ object ShizukuSupport {
             }
             val service = awaitService()
                 ?: return@withContext ShizukuExecResult(false, -1, "", "", error = "SHIZUKU_SERVICE_UNAVAILABLE")
+            // binder 调用本身是同步的，超时后线程可能仍被占着；这里至少让调用方
+            // 不再无限等待，能拿到一个明确的超时结果。
+            val raw = withTimeoutOrNull(timeoutMs + 5_000L) {
+                service.exec(command, timeoutMs.coerceIn(1_000L, 300_000L).toInt())
+            } ?: return@withContext ShizukuExecResult(
+                ok = false,
+                exitCode = -1,
+                stdout = "",
+                stderr = "",
+                timedOut = true,
+                error = "SHIZUKU_TIMEOUT",
+            )
             runCatching {
-                parseExecJson(service.exec(command, timeoutMs.coerceIn(1_000L, 300_000L).toInt()))
+                parseExecJson(raw)
             }.getOrElse { error ->
                 Log.w(TAG, "exec failed: $command", error)
                 ShizukuExecResult(false, -1, "", "", error = error.message ?: "SHIZUKU_EXEC_FAILED")
@@ -188,6 +228,54 @@ object ShizukuSupport {
             }
         }
 
+    /** 分块读回远端文件（截图等大文件不能走 exec 的 stdout）。 */
+    suspend fun readRemoteFile(path: String, maxBytes: Long = MAX_REMOTE_READ_BYTES): ByteArray? =
+        withContext(Dispatchers.IO) {
+            val service = awaitService() ?: return@withContext null
+            runCatching {
+                val size = service.fileSize(path)
+                if (size <= 0L || size > maxBytes) return@runCatching null
+                val output = java.io.ByteArrayOutputStream(size.toInt())
+                var offset = 0L
+                while (offset < size) {
+                    val length = minOf(READ_CHUNK_BYTES.toLong(), size - offset).toInt()
+                    val chunk = service.readFile(path, offset, length)
+                    if (chunk.isEmpty()) break
+                    output.write(chunk)
+                    offset += chunk.size
+                }
+                output.toByteArray()
+            }.getOrNull()
+        }
+
+    /** 流式写入远端文件：安装大 APK 时不用把整个文件读进内存。 */
+    suspend fun writeRemoteFile(path: String, input: InputStream): ShizukuExecResult =
+        withContext(Dispatchers.IO) {
+            val service = awaitService()
+                ?: return@withContext ShizukuExecResult(false, -1, "", "", error = "SHIZUKU_SERVICE_UNAVAILABLE")
+            runCatching {
+                input.use { stream ->
+                    val buffer = ByteArray(WRITE_CHUNK_BYTES)
+                    var append = false
+                    while (true) {
+                        val read = stream.read(buffer)
+                        if (read < 0) break
+                        val chunk = if (read == buffer.size) buffer else buffer.copyOf(read)
+                        if (!service.writeFile(path, chunk, append)) {
+                            return@runCatching ShizukuExecResult(
+                                false, -1, "", "", error = "SHIZUKU_WRITE_FAILED",
+                            )
+                        }
+                        append = true
+                    }
+                }
+                ShizukuExecResult(true, 0, "wrote stream to $path", "")
+            }.getOrElse { error ->
+                Log.w(TAG, "writeRemoteFile(stream) failed: $path", error)
+                ShizukuExecResult(false, -1, "", "", error = error.message ?: "SHIZUKU_WRITE_FAILED")
+            }
+        }
+
     /** 删除 shell/root 身份下的文件。 */
     suspend fun deleteRemoteFile(path: String): Boolean = withContext(Dispatchers.IO) {
         val service = awaitService() ?: return@withContext false
@@ -204,7 +292,6 @@ object ShizukuSupport {
     /** 绑定 UserService（幂等）；返回 true 表示已经连上。 */
     private fun ensureBound(): Boolean {
         val context = appContext ?: return false
-        if (!info().ready) return false
         synchronized(lock) {
             if (shellService != null) return true
             if (!bound) {
@@ -215,7 +302,8 @@ object ShizukuSupport {
                         .daemon(false)
                         .processNameSuffix("shizuku_shell")
                         .debuggable(false)
-                        .version(SHELL_SERVICE_VERSION)
+                        // 跟随 APK versionCode：升级后强制换新实例，避免旧服务代码残留
+                        .version(BuildConfig.VERSION_CODE.toIntOrNull() ?: 1)
                     Shizuku.bindUserService(args, connection)
                     bound = true
                 }.onFailure { Log.w(TAG, "bindUserService failed", it) }
@@ -227,8 +315,15 @@ object ShizukuSupport {
     /** 等 UserService 连上（首次绑定要几十毫秒到几百毫秒）。 */
     private suspend fun awaitService(timeoutMs: Long = 4_000L): IShizukuShellService? {
         val deadline = System.currentTimeMillis() + timeoutMs
+        var lastPermissionCheck = 0L
         while (System.currentTimeMillis() < deadline) {
             shellService?.let { return it }
+            // 权限/服务状态是 4 次 binder 调用，不必每 50ms 查一遍
+            val now = System.currentTimeMillis()
+            if (now - lastPermissionCheck >= 250L) {
+                if (!info().ready) return null
+                lastPermissionCheck = now
+            }
             ensureBound()
             delay(50L)
         }
@@ -243,6 +338,7 @@ object ShizukuSupport {
             stdout = obj["stdout"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             stderr = obj["stderr"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             timedOut = obj["timedOut"]?.jsonPrimitive?.booleanOrNull ?: false,
+            truncated = obj["truncated"]?.jsonPrimitive?.booleanOrNull ?: false,
         )
     }
 }

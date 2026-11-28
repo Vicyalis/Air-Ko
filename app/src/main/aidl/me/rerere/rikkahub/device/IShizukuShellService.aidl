@@ -14,6 +14,15 @@ interface IShizukuShellService {
     /** 删除远端文件。 */
     boolean deleteFile(String path) = 3;
 
+    /** UserService 的实际 uid（2000=shell，0=root），用于连接后确认身份。 */
+    int getUid() = 4;
+
+    /** 远端文件大小（字节），用于分块读取。 */
+    long fileSize(String path) = 5;
+
+    /** 从 [offset] 读取最多 [length] 字节；分块绕过 binder 1MB 事务上限。 */
+    byte[] readFile(String path, long offset, int length) = 6;
+
     /** Shizuku 解绑时调用的固定事务（16777114），实现里退出进程。 */
     void destroy() = 16777114;
 }
